@@ -136,7 +136,8 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'optuna'  # Change this to 'rgcn', 'lgcn', 'lgcn2', or 'optuna' to run different models
+    model_to_run = 'lgcn_best'  # Change this to 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', or 'optuna' to run different
+    # models
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -146,6 +147,10 @@ if __name__ == '__main__':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=150, prune=True, optimizer='adam',
            final=False, emb_dim=1600, weights_size=16, bases=20, printnorms=None)
+    elif model_to_run == 'lgcn_best':
+        # LGCN Best
+        go(model_name='lgcn', name='amplus', lr=0.009602321010499612, wd=0.0027640725119982058, l2=6.021553620803133e-06, epochs=50, prune=True, optimizer='adam',
+           final=False, emb_dim=883, weights_size=15, bases=39, printnorms=None)
     elif model_to_run == 'lgcn2':
         # LGCN2
         go(model_name='lgcn2', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=150, prune=True, optimizer='adam',
