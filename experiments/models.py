@@ -99,14 +99,6 @@ class RGCN(nn.Module):
         if self.bases1 is not None:
             weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(num_rels, num_nodes,
                                                                                          self.emb_dim)
-            # q: what exactly is the line above doing? explain we in every detail please
-            # a: The line above is reshaping the bases tensor to a 2D tensor with the number of rows equal to the number
-            # of bases and the number of columns equal to the product of the number of input dimensions and the number of
-            # output dimensions. Then, it is multiplying the weights tensor with the reshaped bases tensor and reshaping
-            # the result to a 3D tensor with the number of dimensions equal to the number of relations, the number of nodes,
-            # and the embedding dimension. This is done to apply the bases to the weights in the first layer of the R-GCN model.
-            # q: but is see a torch.matmul, what does it do?
-            # a: torch.matmul is a function that performs matrix multiplication between two tensors. In this case, it is multiplying the weights tensor with the reshaped bases tensor.
         else:
             weights = self.weights1
 
@@ -114,11 +106,6 @@ class RGCN(nn.Module):
 
         # Apply weights and sum over relations
         h = torch.matmul(self.hor_graph, weights.view(num_rels * num_nodes, self.emb_dim))
-        # q: what exactly is the line above doing? explain we in every detail please
-        # a: The line above is multiplying the horizontal graph tensor with the reshaped weights tensor. The horizontal graph tensor
-        # is a sparse tensor that represents the adjacency matrix of the graph, and the weights tensor is a 3D tensor that contains
-        # the weights of the first layer of the R-GCN model. The result of the multiplication is a 2D tensor that contains the
-        # weighted sum of the embeddings of the nodes in the graph.
 
         assert h.size() == (num_nodes, self.emb_dim)
 
@@ -131,13 +118,6 @@ class RGCN(nn.Module):
         if self.bases2 is not None:
             weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(num_rels, self.emb_dim,
                                                                                          self.num_classes)
-            # q: what exactly is the line above doing? explain we in every detail please
-            # a: The line above is reshaping the bases tensor to a 2D tensor with the number of rows equal to the number of bases
-            # and the number of columns equal to the product of the number of input dimensions and the number of output dimensions.
-            # Then, it is multiplying the weights tensor with the reshaped bases tensor and reshaping the result to a 3D tensor with
-            # the number of dimensions equal to the number of relations, the embedding dimension, and the number of classes. This is
-            # done to apply the bases to the weights in the second layer of the R-GCN model.
-
         else:
             weights = self.weights2
 
@@ -145,26 +125,6 @@ class RGCN(nn.Module):
 
         # Apply weights and sum over relations
         h = torch.bmm(h, weights).sum(dim=0)
-        # q: what exactly is the line above doing? explain we in every detail please
-        # a: The line above is performing batch matrix multiplication between the embeddings tensor and the weights tensor.
-        # The embeddings tensor contains the embeddings of the nodes in the graph, and the weights tensor contains the weights
-        # of the second layer of the R-GCN model. The result of the batch matrix multiplication is a 3D tensor that contains the
-        # weighted sum of the embeddings of the nodes in the graph.
-        # q: what is sum(dim=0) doing?
-        # a: The sum(dim=0) function is summing the embeddings of the nodes in the graph along the first dimension of the tensor.
-        # This operation is performed to aggregate the embeddings of the nodes in the graph into a single tensor that contains the
-        # weighted sum of the embeddings of the nodes.
-        # q: h is 67x1153679x10, weights is 67x10x8, what is the result of the multiplication?
-        # a: The result of the multiplication is a 67x1153679x8 tensor. This tensor contains the weighted sum of the embeddings of
-        # the nodes in the graph for each relation and class.
-        # q: and how is it after the sum(dim=0)?
-        # a: After the sum(dim=0) operation, the tensor is reduced along the first dimension, resulting in a 1153679x8 tensor that
-        # contains the weighted sum of the embeddings of the nodes in the graph for each class.
-        # q: explain me how sum(dim=0) works and how it changes the shape of the tensor
-        # a: The sum(dim=0) function sums the elements of the tensor along the first dimension. This operation reduces the size of
-        # the tensor along the first dimension and returns a tensor with the same shape as the input tensor, except for the first
-        # dimension, which is removed. In this case, the sum(dim=0) operation reduces the size of the tensor along the first dimension,
-        # resulting in a tensor with a shape of 1153679x8.
 
         assert h.size() == (num_nodes, self.num_classes)
 
@@ -188,7 +148,7 @@ class LGCN(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 1600,
-                 weights_size: int = 16):
+                 weights_size: int = 16, bases: int = None):
         """
         Initialize the L-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -196,12 +156,15 @@ class LGCN(nn.Module):
         :param num_rels (int): Number of relations
         :param num_classes (int): Number of classes
         :param emb_dim (int): Embedding size
+        :param weights_size (int): Size of the weight matrix
+        :param bases (int): Number of bases
         """
 
         super(LGCN, self).__init__()
 
         self.emb_dim = emb_dim
         self.weights_size = weights_size
+        self.bases = bases
         self.num_classes = num_classes
 
         kg.tic()
@@ -233,31 +196,37 @@ class LGCN(nn.Module):
         # Create sparse adjacency matrices
         self.register_buffer('hor_graph', torch.sparse_coo_tensor(hor_indices.T, values, size=hor_size,
                                                                   dtype=torch.float32))
-        self.register_buffer('ver_graph', torch.sparse_coo_tensor(ver_indices.T, values, size=ver_size,
-                                                                  dtype=torch.float32))
+        # self.register_buffer('ver_graph', torch.sparse_coo_tensor(ver_indices.T, values, size=ver_size,
+        #                                                           dtype=torch.float32))
         print(f'Sparse tensors created in {kg.toc():.3}s')
 
         # Trainable Node Embeddings
         self.node_embeddings = nn.Parameter(torch.FloatTensor(num_nodes, emb_dim))  # Learnable embeddings for nodes
-
         # Kaiming initialization for node embeddings
         nn.init.kaiming_normal_(self.node_embeddings, mode='fan_in')
 
         # Initialize weight matrices
-        self.weights1 = self._init_layer(emb_dim, weights_size, num_rels)
-        self.weights2 = self._init_layer(weights_size, weights_size, num_classes)
+        self.weights1, self.bases1 = self._init_layer(num_rels, emb_dim, weights_size, bases)
+        self.weights2, self.bases2 = self._init_layer(num_rels, weights_size, num_classes, bases)
 
         # Initialize biases
         self.bias1 = nn.Parameter(torch.zeros(weights_size))
         self.bias2 = nn.Parameter(torch.zeros(num_classes))
 
-    def _init_layer(self, rows, columns, layers):
+    def _init_layer(self, num_rels, in_dim, out_dim, bases):
         """
         Helper function to initialize weight layers
         """
-        weights = nn.Parameter(torch.empty(rows, columns, layers))
-        nn.init.xavier_uniform_(weights, gain=nn.init.calculate_gain('relu'))
-        return weights
+        if bases is None:
+            weights = nn.Parameter(torch.empty(num_rels, in_dim, out_dim))
+            nn.init.xavier_uniform_(weights, gain=nn.init.calculate_gain('relu'))
+            return weights
+        else:
+            comps = nn.Parameter(torch.empty(num_rels, bases))
+            bases = nn.Parameter(torch.empty(bases, in_dim, out_dim))
+            nn.init.xavier_uniform_(comps, gain=nn.init.calculate_gain('relu'))
+            nn.init.xavier_uniform_(bases, gain=nn.init.calculate_gain('relu'))
+            return comps, bases
 
     def forward(self):
         """
@@ -267,10 +236,27 @@ class LGCN(nn.Module):
         num_nodes, rel_nodes = self.hor_graph.shape
         num_rels = rel_nodes // num_nodes
 
-        # Embedding layer
-        weights = self.weights1
+        # Layer 1 L-GCN
+
+        if self.bases1 is not None:
+            weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(num_rels, self.emb_dim,
+                                                                                         self.weights_size)
+            assert weights.shape == (num_rels, self.emb_dim, self.weights_size)
+
+            weights = torch.transpose(weights, 0, 1)
+            weights = torch.transpose(weights, 1, 2)
+
+            assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
+
+        else:
+            print(f'No bases1')
+            weights = torch.transpose(self.weights, 0, 1)
+            weights = torch.transpose(weights, 1, 2)
+
+            assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
 
         assert self.node_embeddings.size() == (num_nodes, self.emb_dim)
+
         assert weights.size() == (self.emb_dim, self.weights_size, num_rels)
 
         h = torch.einsum('ni,ior->rno', self.node_embeddings, weights)
@@ -283,7 +269,6 @@ class LGCN(nn.Module):
 
         assert self.hor_graph.size() == (num_nodes, num_rels * num_nodes)
 
-        # Layer 1 L-GCN
         h = torch.matmul(self.hor_graph, h)
 
         assert h.size() == (num_nodes, self.weights_size)
@@ -294,21 +279,36 @@ class LGCN(nn.Module):
 
         # Layer 2 L-GCN
 
-        weights = self.weights2
+        if self.bases2 is not None:
+            weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(num_rels, self.weights_size,
+                                                                                         self.num_classes)
+            assert weights.shape == (num_rels, self.weights_size, self.num_classes)
 
-        assert weights.size() == (self.weights_size, self.weights_size, self.num_classes)
+            weights = torch.transpose(weights, 0, 1)
+            weights = torch.transpose(weights, 1, 2)
 
-        h = torch.einsum('ni,ioc->cno', h, weights)
+        else:
+            print(f'No bases2')
+            weights = torch.transpose(self.weights2, 0, 1)
+            weights = torch.transpose(weights, 1, 2)
 
-        assert h.size() == (self.num_classes, num_nodes, self.weights_size)
+        assert weights.size() == (self.weights_size, self.num_classes, num_rels), f'weights.shape: {weights.shape}'
 
-        h = torch.reshape(h, (self.weights_size, num_nodes, self.num_classes))
+        h = torch.einsum('ni,icr->rnc', h, weights)
 
-        assert h.size() == (self.weights_size, num_nodes, self.num_classes)
+        assert h.size() == (num_rels, num_nodes, self.num_classes)
 
-        h = torch.sum(h, dim=0)
+        h = torch.reshape(h, (num_rels * num_nodes, self.num_classes))
+
+        assert h.size() == (num_rels * num_nodes, self.num_classes)
+
+        assert self.hor_graph.size() == (num_nodes, num_rels * num_nodes)
+
+        h = torch.matmul(self.hor_graph, h)
 
         assert h.size() == (num_nodes, self.num_classes)
+
+        assert self.bias2.size() == (self.num_classes,)
 
         return h + self.bias2  # softmax is applied in the loss function
 
@@ -343,10 +343,16 @@ class LGCN2(nn.Module):
         self.weights_size = weights_size
         self.num_classes = num_classes
 
-        r = len(triples)
+        r = len(set(triples[:, 1].tolist()))
 
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
-        indices = list({(s, o) for (s, _, o) in triples})
+        indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
+
+        # triples = triples.tolist()
+        # ctr = Counter((s, o) for (s, _, o) in triples)
+        # print(ctr.most_common(250))
+        # exit()
+
         p2i = {(s, o): i for i, (s, o) in enumerate(indices)}
         indices = torch.tensor(indices, dtype=torch.long)
         nt, _ = indices.size()
@@ -359,15 +365,21 @@ class LGCN2(nn.Module):
         # -- indices multiplied by relation
         s, o = s.expand(rp, nt).reshape(-1, 1), o.expand(rp, nt).reshape(-1, 1)
 
-
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-        self.register_buffer('nhots', torch.zeros(nt, r, dtype=torch.uint8))
-        for s, p, o in triples:
-            self.nhots[p2i[(s, o)], p] = 1
+        # triples_list = triples.tolist()
+        self.register_buffer('nhots', torch.zeros(nt, r))
+        # for s, p, o in triples_list:
+        #     self.nhots[p2i[(s, o)], p] = 1
+
+        s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
+        rows = torch.tensor([p2i[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
+        self.nhots[rows, p] = 1
+
         # -- filling a torch tensor this way is pretty slow. Might be better to start with a python list
 
+        print(self.nhots.sum(dim=1).mean())
 
         # maps relations to latent relations (one per layer)
         to_latent1 = [nn.Linear(r, lwidth)]
@@ -389,7 +401,6 @@ class LGCN2(nn.Module):
         self.to_latent2 = nn.Sequential(*to_latent2)
 
         self.rp, self.r, self.num_nodes, self.nt = rp, r, num_nodes, nt
-
 
         # layer 1 weights
         self.weights1 = self._init_layer(rp, num_nodes, emb_dim)

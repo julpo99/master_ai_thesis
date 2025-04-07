@@ -1,6 +1,7 @@
 from collections import Counter
 
 import kgbench as kg
+import optuna
 import torch
 import torch.nn.functional as F
 
@@ -29,11 +30,11 @@ def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, pru
     elif model_name == 'lgcn':
         model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                      num_classes=data.num_classes,
-                     emb_dim=emb_dim, weights_size=weights_size).to(device)
+                     emb_dim=emb_dim, weights_size=weights_size, bases=bases).to(device)
     elif model_name == 'lgcn2':
         model = LGCN2(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
-                     num_classes=data.num_classes,
-                     emb_dim=emb_dim, weights_size=weights_size, rp=rp, ldepth=ldepth, lwidth=lwidth).to(device)
+                      num_classes=data.num_classes,
+                      emb_dim=emb_dim, weights_size=weights_size, rp=rp, ldepth=ldepth, lwidth=lwidth).to(device)
     else:
         raise ValueError(f"Unknown model name: {model_name}")
 
@@ -115,21 +116,46 @@ def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, pru
 
     print(f'\nTraining complete! (total time: {kg.toc() / 60:.2f}m)')
 
+    return withheld_acc
+
+
+def objective(trial):
+    lr = trial.suggest_float('lr', 1e-5, 1e-2, log=True)
+    wd = trial.suggest_float('wd', 0.0, 0.1)
+    l2 = trial.suggest_float('l2', 0.0, 0.0001)
+    epochs = trial.suggest_int('epochs', 50, 100)
+    emb_dim = trial.suggest_int('emb_dim', 128, 1600)
+    weights_size = trial.suggest_int('weights_size', 8, 32)
+    bases = trial.suggest_int('bases', 10, 40)
+
+    withheld_acc = go(model_name='lgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
+                      optimizer='adam',
+                      final=False, emb_dim=emb_dim, weights_size=weights_size, bases=bases, printnorms=None)
+
+    return withheld_acc
+
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn'  # or 'lgcn'
+    model_to_run = 'optuna'  # Change this to 'rgcn', 'lgcn', 'lgcn2', or 'optuna' to run different models
 
     if model_to_run == 'rgcn':
         # RGCN
         go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=50, prune=True, optimizer='adam',
-           final=False, emb_dim=10, weights_size=16, bases=40, printnorms=None)
+           final=False, emb_dim=16, bases=40, printnorms=None)
     elif model_to_run == 'lgcn':
         # LGCN
-        go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, prune=True, optimizer='adam',
-           final=False, emb_dim=1600, weights_size=16, bases=None, printnorms=None)
+        go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=150, prune=True, optimizer='adam',
+           final=False, emb_dim=1600, weights_size=16, bases=20, printnorms=None)
     elif model_to_run == 'lgcn2':
         # LGCN2
-        go(model_name='lgcn2', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=150, prune=True, optimizer='adam',
-           final=False, emb_dim=16, weights_size=0, rp=16, ldepth=0, lwidth=64, bases=None, printnorms=None)
+        go(model_name='lgcn2', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=150, prune=True, optimizer='adam',
+           final=False, emb_dim=10, weights_size=0, rp=16, ldepth=0, lwidth=64, bases=None, printnorms=None)
+    elif model_to_run == 'optuna':
+        # Optuna
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=100)
+        print('Best trial:')
+        trial = study.best_trial
+        print(trial)
     else:
         raise ValueError(f"Unknown model name: {model_to_run}")
