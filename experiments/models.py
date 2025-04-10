@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from utils import enrich, sum_sparse, adj, sum_sparse2, spmm
+from experiments.utils import enrich, sum_sparse, adj, sum_sparse2, spmm
 
 
 class RGCN(nn.Module):
@@ -183,6 +183,7 @@ class LGCN(nn.Module):
         print(f'Adjacency matrices computed in {kg.toc():.2}s')
 
         _, rel_nodes = hor_size
+        # rel_nodes, _ = ver_size
         num_rels = rel_nodes // num_nodes
 
         kg.tic()
@@ -200,18 +201,26 @@ class LGCN(nn.Module):
         #                                                           dtype=torch.float32))
         print(f'Sparse tensors created in {kg.toc():.3}s')
 
+        kg.tic()
+
         # Trainable Node Embeddings
         self.node_embeddings = nn.Parameter(torch.FloatTensor(num_nodes, emb_dim))  # Learnable embeddings for nodes
         # Kaiming initialization for node embeddings
         nn.init.kaiming_normal_(self.node_embeddings, mode='fan_in')
+        # The initialisation below is faster but not as good in our experience
+        # nn.init.xavier_uniform_(self.node_embeddings)
+
 
         # Initialize weight matrices
         self.weights1, self.bases1 = self._init_layer(num_rels, emb_dim, weights_size, bases)
         self.weights2, self.bases2 = self._init_layer(num_rels, weights_size, num_classes, bases)
 
+        kg.tic()
         # Initialize biases
         self.bias1 = nn.Parameter(torch.zeros(weights_size))
         self.bias2 = nn.Parameter(torch.zeros(num_classes))
+
+        print(f'Weights initialized in {kg.toc():.3}s')
 
     def _init_layer(self, num_rels, in_dim, out_dim, bases):
         """
@@ -327,7 +336,7 @@ class LGCN2(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 weights_size: int = 16, rp=16, ldepth=0, lwidth=64):
+                 rp=16, ldepth=0, lwidth=64, bases: int = None):
         """
         Initialize the L-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -339,11 +348,15 @@ class LGCN2(nn.Module):
 
         super(LGCN2, self).__init__()
 
+        self.num_rels = num_rels
         self.emb_dim = emb_dim
-        self.weights_size = weights_size
+        self.bases = bases
         self.num_classes = num_classes
 
-        r = len(set(triples[:, 1].tolist()))
+        print('num_rels = ', num_rels)
+        # r = len(set(triples[:, 1].tolist()))
+        r = num_rels
+        print('r = ', r)
 
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
@@ -368,18 +381,18 @@ class LGCN2(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
+        # self.register_buffer('nhots', torch.zeros(nt, r)) # original code commented
         # triples_list = triples.tolist()
-        self.register_buffer('nhots', torch.zeros(nt, r))
         # for s, p, o in triples_list:
         #     self.nhots[p2i[(s, o)], p] = 1
 
+        # new code
+        self.register_buffer('nhots', torch.zeros(nt, num_rels))
         s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
         rows = torch.tensor([p2i[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
         self.nhots[rows, p] = 1
 
-        # -- filling a torch tensor this way is pretty slow. Might be better to start with a python list
-
-        print(self.nhots.sum(dim=1).mean())
+        # print(self.nhots.sum(dim=1).mean())
 
         # maps relations to latent relations (one per layer)
         to_latent1 = [nn.Linear(r, lwidth)]
@@ -425,7 +438,7 @@ class LGCN2(nn.Module):
         """
         LACT = torch.relu
 
-        rp, r, n, nt = self.rp, self.r, self.n, self.nt
+        rp, r, n, nt = self.rp, self.r, self.num_nodes, self.nt
 
         latents1 = self.to_latent1(self.nhots)
         assert latents1.size() == (nt, rp)
@@ -438,8 +451,8 @@ class LGCN2(nn.Module):
         assert self.hindices.size(0) == latents1.size(0), f'{self.indices.size()} {latents1.size()}'
 
         ## Layer 1
-        e = self.emb
-        b, c = self.bases, self.numcls
+        e = self.emb_dim
+        b, c = self.bases, self.num_classes
 
         weights = self.weights1
 

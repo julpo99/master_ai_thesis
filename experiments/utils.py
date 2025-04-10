@@ -319,8 +319,7 @@ def adj(triples: torch.Tensor, num_nodes: int, num_rels: int, cuda: bool = False
     else:
         to += offset
 
-    # Stack adjacency indices (no need for Python lists)
-    # indices = torch.stack([fr, to], dim=0)
+    # Stack adjacency indices
     indices = torch.cat([fr.unsqueeze(0), to.unsqueeze(0)], dim=0)
 
     # Validate adjacency matrix indices
