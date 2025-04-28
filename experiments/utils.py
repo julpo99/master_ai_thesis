@@ -213,7 +213,7 @@ class SparseMMCPU(torch.autograd.Function):
         # print(type(size), size, list(size), intlist(size))
         # print(indices.size(), values.size(), torch.Size(intlist(size)))
 
-        matrix = torch.sparse.FloatTensor(indices, values, torch.Size(intlist(size)))
+        matrix = torch.sparse_coo_tensor(indices, values, torch.Size(intlist(size)))
 
         ctx.indices, ctx.matrix, ctx.xmatrix = indices, matrix, xmatrix
 

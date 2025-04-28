@@ -162,7 +162,7 @@ if __name__ == '__main__':
     elif model_to_run == 'lgcn2':
         # LGCN2
         go(model_name='lgcn2', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=150, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=0, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
+           final=False, emb_dim=16, weights_size=0, rp=16, ldepth=8, lwidth=128, bases=None, printnorms=None)
     elif model_to_run == 'optuna':
         # Optuna
         study = optuna.create_study(direction='maximize')
