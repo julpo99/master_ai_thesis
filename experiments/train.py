@@ -136,7 +136,7 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn2'  # Change this to 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', or 'optuna' to run different
+    model_to_run = 'rgcn'  # Change this to 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', or 'optuna' to run different
     # models
 
     if model_to_run == 'rgcn':

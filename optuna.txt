@@ -1,0 +1,1 @@
+Trial 7 finished with value: 0.7519 and parameters: {'wd': 0.0018386245723626034, 'l2': 0.00015230757283259526, 'epochs': 55, 'emb_dim': 540, 'weights_size': 18, 'bases': 38}. Best is trial 6 with value: 0.7828.
