@@ -247,7 +247,7 @@ class SparseMMGPU(torch.autograd.Function):
     def forward(ctx, indices, values, size, xmatrix):
         # print(type(size), size, list(size), intlist(size))
 
-        matrix = torch.cuda.sparse.FloatTensor(indices, values, torch.Size(intlist(size)))
+        matrix = torch.sparse_coo_tensor(indices, values, torch.Size(intlist(size)), device='cuda')
 
         ctx.indices, ctx.matrix, ctx.xmatrix = indices, matrix, xmatrix
 

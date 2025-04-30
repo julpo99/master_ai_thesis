@@ -8,13 +8,12 @@ version = "0.1"
 description = "LGCN"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT License" }
+license = "MIT"
 authors = [{ name = "Julian Ramondo", email = "j.n.ramondo@student.vu.nl" }]
 # homepage = ""
 # keywords = []
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent"
 ]
 
@@ -29,5 +28,8 @@ dependencies = [
     "optuna",
 ]
 
+[tool.setuptools]
+packages = ["experiments"]
+
 [project.urls]
-Repository = "https://github.com/julpo99/lgcn"
+Repository = "https://github.com/julpo99/master_ai_thesis"

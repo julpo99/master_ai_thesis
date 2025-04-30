@@ -3,49 +3,63 @@
 #SBATCH --time=00:15:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
+#SBATCH --constraint=A6000            # GPU type
 #SBATCH --ntasks-per-node=1           # Number of tasks per node
 #SBATCH --gres=gpu:1                  # Number of GPU cores per task
 #SBATCH --output=output_%j.log    # Output log file (%j will be replaced with the job ID)
+#SBATCH --mail-user=roymiller1024@gmail.com
+#SBATCH --mail-type=END
 
 
 # Paths
 SCRATCH=/var/scratch/jra223
 SCRIPT_DIR=$SCRATCH/master_ai_thesis
-TRAIN_PATH=$SCRIPT_DIR"experiments/train.py"
+TRAIN_PATH=$SCRIPT_DIR/"experiments/train.py"
 
 
 # Load required modules for DAS6
  . /etc/bashrc
  . /etc/profile.d/lmod.sh
-module load cuda12.3/toolkit
-module load cuDNN/cuda12.3
+module load cuda12.6/toolkit
+module load cuDNN/cuda12.6
+
+# This loads the anaconda virtual environment with our packages
+source $HOME/.bashrc
+conda activate /var/scratch/jra223/master_ai_thesis/env
 
 
-source ~/.bashrc
-
-# This loads the virtual environment with our packages
-source /var/scratch/jra223/master_ai_thesis/.venv/bin/activate
-
-# Check which Python is active (important!)
-which python
-python --version
+# Check which Python is active
+#which python
+#python --version
 
 #echo "Running on node: $(hostname)"
 #echo "Using GPU cores: $SLURM_NTASKS"
 
-# Base directory for the experiment
-mkdir $SCRIPT_DIR/experiments_output
-cd $SCRIPT_DIR/experiments_output
+# Base directory for the experiment (only if not exists)
+if [ ! -d $SCRIPT_DIR/outputs ]; then
+  mkdir $SCRIPT_DIR/outputs
+fi
+# cd if the directory exists
+if [ -d $SCRIPT_DIR/outputs ]; then
+  cd $SCRIPT_DIR/outputs
+else
+  echo "Directory $SCRIPT_DIR/outputs does not exist."
+  exit 1
+fi
 
 # Simple trick to create a unique directory for each run of the script
 echo $$
 mkdir o`echo $$`
 cd o`echo $$`
 
-# Run the actual experiment
-#python -u $TRAIN_PATH > 'output.out'
 
-python <<EOF
-import torch
-print(torch.cuda.is_available())
-EOF
+#python <<EOF
+#import torch
+#print(torch.cuda.is_available())
+#print(torch.cuda.get_device_name(0))
+#EOF
+
+
+# Run the actual experiment
+python -u $TRAIN_PATH > 'output.out'
+#python -u /var/scratch/jra223/master_ai_thesis/test.py > 'output.out'
