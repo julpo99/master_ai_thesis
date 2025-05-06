@@ -26,6 +26,7 @@ dependencies = [
     "torch-geometric",
     "wget",
     "optuna",
+    "wandb",
 ]
 
 [tool.setuptools]
