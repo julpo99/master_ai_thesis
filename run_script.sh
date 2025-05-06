@@ -1,14 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=lgcn               # Job name
+#SBATCH --job-name=rgcn               # Job name
 #SBATCH --time=00:15:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
 #SBATCH --constraint=A6000            # GPU type
 #SBATCH --ntasks-per-node=1           # Number of tasks per node
 #SBATCH --gres=gpu:1                  # Number of GPU cores per task
-#SBATCH --output=output_%j.log    # Output log file (%j will be replaced with the job ID)
-#SBATCH --mail-user=roymiller1024@gmail.com
-#SBATCH --mail-type=END
+#SBATCH --output=output_%j.log       # Output log file (%j will be replaced with the job ID)
 
 
 # Paths
@@ -62,4 +60,3 @@ cd o`echo $$`
 
 # Run the actual experiment
 python -u $TRAIN_PATH > 'output.out'
-#python -u /var/scratch/jra223/master_ai_thesis/test.py > 'output.out'

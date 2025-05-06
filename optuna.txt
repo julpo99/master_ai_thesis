@@ -1,8 +1,11 @@
-lgcn best parameters
-Trial 7 finished with value: 0.7519 and parameters: {'wd': 0.0018386245723626034, 'l2': 0.00015230757283259526, 'epochs': 55, 'emb_dim': 540, 'weights_size': 18, 'bases': 38}. Best is trial 6 with value: 0.7828.
-Trial 2 finished with value: 0.76895 and parameters: {'wd': 0.002085356601740634, 'l2': 0.000323633719185436, 'epochs': 75, 'emb_dim': 536, 'weights_size': 23, 'bases': 32}. Best is trial 2 with value: 0.76895.
-Trial 7 finished with value: 0.7734 and parameters: {'wd': 0.010123139133733597, 'l2': 1.2733338809274765e-06, 'epochs': 50, 'emb_dim': 693, 'weights_size': 16, 'bases': 34}. Best is trial 7 with value: 0.7734.
+RGCN best parameters
+0.8591 and parameters: {'lr': 0.03496818515661486, 'wd': 0.000384113466755141, 'l2': 0.0009027947821005017, 'epochs': 50, 'emb_dim': 29, 'bases': 15}.
 
 
-go(model_name='lgcn', name='amplus', lr=0.01, wd=0.001, l2=0.00007, epochs=80, prune=True, optimizer='adam',
-           final=False, emb_dim=800, weights_size=16, bases=40, printnorms=None)
+
+LGCN best parameters
+0.7734 and parameters: {'wd': 0.010123139133733597, 'l2': 1.2733338809274765e-06, 'epochs': 50, 'emb_dim': 693, 'weights_size': 16, 'bases': 34}. Best is trial 7 with value: 0.7734.
+
+
+
+LGCN2 best parameters
