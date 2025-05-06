@@ -8,8 +8,9 @@ import torch.nn.functional as F
 from models import RGCN, LGCN, LGCN2
 
 
-def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, prune=False, optimizer='adam',
-       final=False, emb_dim=16, weights_size=16, rp=16, ldepth=0, lwidth=64, bases=None, printnorms=None):
+def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, weights_size=None, rp=None, ldepth=None,
+       lwidth=None, bases=None,
+       printnorms=None):
     # Load dataset
     data = kg.load(name, torch=True, prune_dist=2 if prune else None, final=final)
 
@@ -144,16 +145,16 @@ def objective_lgcn(trial):
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
     epochs = trial.suggest_int('epochs', 30, 200)
     optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
-    emb_dim = trial.suggest_int('emb_dim', 128, 1024)
-    weights_size = trial.suggest_int('weights_size', 1, 50)
-    bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
+    emb_dim = trial.suggest_int('emb_dim', 512, 2048)
+    weights_size = trial.suggest_int('weights_size', 1, 64)
+    bases = trial.suggest_categorical('bases', [None] + list(range(1, 2)))
 
     withheld_acc = go(model_name='lgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, weights_size=weights_size, bases=bases,
                       printnorms=None)
 
-
     return withheld_acc
+
 
 def objective_lgcn2(trial):
     lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
@@ -168,15 +169,15 @@ def objective_lgcn2(trial):
     bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
 
     withheld_acc = go(model_name='lgcn2', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
-                      optimizer=optimizer, final=False, emb_dim=emb_dim, rp= rp, ldepth=ldepth, lwidth=lwidth, bases=bases,
+                      optimizer=optimizer, final=False, emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth,
+                      bases=bases,
                       printnorms=None)
 
     return withheld_acc
 
 
 if __name__ == '__main__':
-    model_to_run = 'rgcn_optuna'  # 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', 'rgcn_optuna', 'lgcn_optuna'
-
+    model_to_run = 'lgcn_optuna'  # 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', 'rgcn_optuna', 'lgcn_optuna'
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -185,7 +186,8 @@ if __name__ == '__main__':
 
     elif model_to_run == 'rgcn_best':
         # RGCN Best (optuna)
-        go(model_name='rgcn', name='amplus', lr=0.03496818515661486, wd=0.000384113466755141, l2=0.0009027947821005017, epochs=50, prune=True, optimizer='adam',
+        go(model_name='rgcn', name='amplus', lr=0.03496818515661486, wd=0.000384113466755141, l2=0.0009027947821005017,
+           epochs=50, prune=True, optimizer='adam',
            final=False, emb_dim=29, bases=15, printnorms=None)
 
 
@@ -215,6 +217,14 @@ if __name__ == '__main__':
         # Optuna rgcn
         study = optuna.create_study(direction='maximize')
         study.optimize(objective_rgcn, n_trials=10000)
+        print('Best trial:')
+        trial = study.best_trial
+        print(trial)
+
+    elif model_to_run == 'lgcn_optuna':
+        # Optuna rgcn
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective_lgcn, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
         print(trial)
