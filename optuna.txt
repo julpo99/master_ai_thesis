@@ -1,10 +1,11 @@
 RGCN best parameters
 0.8591 and parameters: {'lr': 0.03496818515661486, 'wd': 0.000384113466755141, 'l2': 0.0009027947821005017, 'epochs': 50, 'emb_dim': 29, 'bases': 15}.
+0.851 and parameters: {'lr': 0.05499010733725328, 'wd': 0.00022666309964608877, 'l2': 0.000514707867508644, 'epochs': 163, 'optimizer': 'adamw', 'emb_dim': 31, 'bases': None}. Best is trial 611 with value: 0.851.
 
 
 
 LGCN best parameters
-0.7734 and parameters: {'wd': 0.010123139133733597, 'l2': 1.2733338809274765e-06, 'epochs': 50, 'emb_dim': 693, 'weights_size': 16, 'bases': 34}. Best is trial 7 with value: 0.7734.
+0.836 and parameters: {'lr': 0.0016366409775459736, 'wd': 0.0005755564025828806, 'l2': 4.854651125478105e-05, 'epochs': 45, 'optimizer': 'adam', 'emb_dim': 1236, 'weights_size': 49, 'bases': 29}. Best is trial 900 with value: 0.836.
 
 
 

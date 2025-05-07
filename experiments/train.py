@@ -1,5 +1,6 @@
 from collections import Counter
 
+import wandb
 import kgbench as kg
 import optuna
 import torch
@@ -10,7 +11,7 @@ from models import RGCN, LGCN, LGCN2
 
 def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, weights_size=None, rp=None, ldepth=None,
        lwidth=None, bases=None,
-       printnorms=None):
+       printnorms=None, trial=None, wandb=None):
     # Load dataset
     data = kg.load(name, torch=True, prune_dist=2 if prune else None, final=final)
 
@@ -24,8 +25,8 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
     kg.tic()
 
     # Initialize R-GCN model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device == torch.device("cuda"):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device == torch.device('cuda'):
         print('Using CUDA')
 
     if model_name == 'rgcn':
@@ -41,7 +42,7 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
                       num_classes=data.num_classes,
                       emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth, bases=bases).to(device)
     else:
-        raise ValueError(f"Unknown model name: {model_name}")
+        raise ValueError(f'Unknown model name: {model_name}')
 
     print(f'Model {model_name} created in {kg.toc():.3}s\n')
 
@@ -51,11 +52,11 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
 
     # Select optimizer
     optimizers = {
-        "adam": torch.optim.Adam,
-        "adamw": torch.optim.AdamW
+        'adam': torch.optim.Adam,
+        'adamw': torch.optim.AdamW
     }
     if optimizer not in optimizers:
-        raise ValueError(f"Unknown optimizer: {optimizer}")
+        raise ValueError(f'Unknown optimizer: {optimizer}')
 
     opt = optimizers[optimizer](model.parameters(), lr=lr, weight_decay=wd)
 
@@ -95,6 +96,13 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
             training_acc = torch.sum(preds_train == clst).item() / idxt.size(0)
             withheld_acc = torch.sum(preds_withheld == clsw).item() / idxw.size(0)
 
+            if trial is not None:
+                trial.report(withheld_acc, e)
+
+                # Log metrics to wandb
+                wandb.log(data={'loss': loss.item(), 'train_acc': training_acc, 'withheld_acc': withheld_acc}, step=e)
+
+
         # Print epoch statistics
         print(
             f'Epoch {e:02}: \t\t loss {loss:.4f}, \t\t train acc {training_acc:.2f}, \t\t withheld acc'
@@ -121,37 +129,50 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
 
     print(f'\nTraining complete! (total time: {kg.toc() / 60:.2f}m)')
 
+    if wandb is not None:
+        wandb.run.summary['final accuracy'] = withheld_acc
+        wandb.run.summary['state'] = 'completed'
+        wandb.finish(quiet=True)
+
     return withheld_acc
 
 
 def objective_rgcn(trial):
     lr = trial.suggest_float('lr', 0.01, 0.1, log=True)
-    wd = trial.suggest_float('wd', 0.0001, 0.1, log=True)
+    wd = trial.suggest_float('wd', 0.0001, 0.03, log=True)
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
     epochs = trial.suggest_int('epochs', 30, 200)
     optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
-    emb_dim = trial.suggest_int('emb_dim', 8, 32)
+    emb_dim = trial.suggest_int('emb_dim', 8, 64)
     bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
 
+    config = dict(trial.params)
+    config['trial.number'] = trial.number
+    wandb.init(project='rgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
+
     withheld_acc = go(model_name='rgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
-                      optimizer=optimizer, final=False, emb_dim=emb_dim, bases=bases, printnorms=None)
+                      optimizer=optimizer, final=False, emb_dim=emb_dim, bases=bases, printnorms=None, trial=trial, wandb=wandb)
 
     return withheld_acc
 
 
 def objective_lgcn(trial):
     lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
-    wd = trial.suggest_float('wd', 0.00001, 0.1, log=True)
+    wd = trial.suggest_float('wd', 0.00001, 0.01, log=True)
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
-    epochs = trial.suggest_int('epochs', 30, 200)
+    epochs = trial.suggest_int('epochs', 5, 60)
     optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
     emb_dim = trial.suggest_int('emb_dim', 512, 2048)
-    weights_size = trial.suggest_int('weights_size', 1, 64)
-    bases = trial.suggest_categorical('bases', [None] + list(range(1, 2)))
+    weights_size = trial.suggest_int('weights_size', 32, 128)
+    bases = trial.suggest_categorical('bases', [None] + list(range(1, 65)))
+
+    config = dict(trial.params)
+    config['trial.number'] = trial.number
+    wandb.init(project='lgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
 
     withheld_acc = go(model_name='lgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, weights_size=weights_size, bases=bases,
-                      printnorms=None)
+                      printnorms=None, trial=trial, wandb=wandb)
 
     return withheld_acc
 
@@ -162,22 +183,28 @@ def objective_lgcn2(trial):
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
     epochs = trial.suggest_int('epochs', 30, 200)
     optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
-    emb_dim = trial.suggest_int('emb_dim', 128, 1024)
-    rp = trial.suggest_int('rp', 1, 32)
-    ldepth = trial.suggest_int('ldepth', 1, 16)
+    emb_dim = trial.suggest_int('emb_dim', 4, 128)
+    rp = trial.suggest_int('rp', 1, 16)
+    ldepth = trial.suggest_int('ldepth', 1, 8)
     lwidth = trial.suggest_int('lwidth', 16, 256)
     bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
+
+    config = dict(trial.params)
+    config['trial.number'] = trial.number
+    wandb.init(project='lgcn2_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
 
     withheld_acc = go(model_name='lgcn2', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth,
                       bases=bases,
-                      printnorms=None)
+                      printnorms=None, trial=trial, wandb=wandb)
 
     return withheld_acc
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_optuna'  # 'rgcn', 'lgcn', 'lgcn_best', 'lgcn2', 'rgcn_optuna', 'lgcn_optuna'
+    model_to_run = 'lgcn2'
+    # 'rgcn', 'rgcn_best', 'lgcn', 'lgcn_best', 'lgcn2', 'rgcn2_best'
+    # 'rgcn_optuna', 'lgcn_optuna', 'lgcn2_optuna'
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -186,22 +213,23 @@ if __name__ == '__main__':
 
     elif model_to_run == 'rgcn_best':
         # RGCN Best (optuna)
-        go(model_name='rgcn', name='amplus', lr=0.03496818515661486, wd=0.000384113466755141, l2=0.0009027947821005017,
-           epochs=50, prune=True, optimizer='adam',
-           final=False, emb_dim=29, bases=15, printnorms=None)
-
+        # go(model_name='rgcn', name='amplus', lr=0.03496818515661486, wd=0.000384113466755141, l2=0.0009027947821005017,
+        #    epochs=50, prune=True, optimizer='adam',
+        #    final=False, emb_dim=29, bases=15, printnorms=None)
+        go(model_name='rgcn', name='amplus', lr=0.05499010733725328, wd=0.00022666309964608877, l2=0.000514707867508644,
+           epochs=163, prune=True, optimizer='adamw', final=False, emb_dim=31, bases=None, printnorms=None)
 
 
     elif model_to_run == 'lgcn':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=50, prune=True, optimizer='adam',
-           final=False, emb_dim=1600, weights_size=16, bases=20, printnorms=None)
+           final=False, emb_dim=1600, weights_size=16, bases=None, printnorms=None, wandb=None)
 
     elif model_to_run == 'lgcn_best':
         # LGCN Best (optuna)
-        go(model_name='lgcn', name='amplus', lr=0.01, wd=0.010123139133733597, l2=1.2733338809274765e-06, epochs=50,
+        go(model_name='lgcn', name='amplus', lr=0.0016366409775459736, wd=0.0005755564025828806, l2=4.854651125478105e-05, epochs=45,
            prune=True, optimizer='adam',
-           final=False, emb_dim=693, weights_size=16, bases=34, printnorms=None)
+           final=False, emb_dim=1236, weights_size=49, bases=29, printnorms=None)
 
 
 
@@ -215,7 +243,11 @@ if __name__ == '__main__':
 
     elif model_to_run == 'rgcn_optuna':
         # Optuna rgcn
-        study = optuna.create_study(direction='maximize')
+        study = optuna.create_study(
+            direction='maximize',
+            study_name='rgcn_optuna',
+        )
+
         study.optimize(objective_rgcn, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
@@ -223,7 +255,10 @@ if __name__ == '__main__':
 
     elif model_to_run == 'lgcn_optuna':
         # Optuna rgcn
-        study = optuna.create_study(direction='maximize')
+        study = optuna.create_study(
+            direction='maximize',
+            study_name='lgcn_optuna',
+        )
         study.optimize(objective_lgcn, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
@@ -231,10 +266,13 @@ if __name__ == '__main__':
 
     elif model_to_run == 'lgcn2_optuna':
         # Optuna lgcn2
-        study = optuna.create_study(direction='maximize')
+        study = optuna.create_study(
+            direction='maximize',
+            study_name='lgcn2_optuna',
+        )
         study.optimize(objective_lgcn2, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
         print(trial)
     else:
-        raise ValueError(f"Unknown model name: {model_to_run}")
+        raise ValueError(f'Unknown model name: {model_to_run}')

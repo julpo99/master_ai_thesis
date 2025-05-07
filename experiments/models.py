@@ -229,7 +229,7 @@ class LGCN(nn.Module):
         if bases is None:
             weights = nn.Parameter(torch.empty(num_rels, in_dim, out_dim))
             nn.init.xavier_uniform_(weights, gain=nn.init.calculate_gain('relu'))
-            return weights
+            return weights, None
         else:
             comps = nn.Parameter(torch.empty(num_rels, bases))
             bases = nn.Parameter(torch.empty(bases, in_dim, out_dim))
@@ -258,8 +258,7 @@ class LGCN(nn.Module):
             assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
 
         else:
-            print(f'No bases1')
-            weights = torch.transpose(self.weights, 0, 1)
+            weights = torch.transpose(self.weights1, 0, 1)
             weights = torch.transpose(weights, 1, 2)
 
             assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
@@ -297,7 +296,6 @@ class LGCN(nn.Module):
             weights = torch.transpose(weights, 1, 2)
 
         else:
-            print(f'No bases2')
             weights = torch.transpose(self.weights2, 0, 1)
             weights = torch.transpose(weights, 1, 2)
 
@@ -346,6 +344,7 @@ class LGCN2(nn.Module):
         :param emb_dim (int): Embedding size
         """
 
+
         super(LGCN2, self).__init__()
 
         self.num_rels = num_rels
@@ -353,14 +352,21 @@ class LGCN2(nn.Module):
         self.bases = bases
         self.num_classes = num_classes
 
-        print('num_rels = ', num_rels)
-        # r = len(set(triples[:, 1].tolist()))
-        r = num_rels
-        print('r = ', r)
 
+        kg.tic()
+
+        # Enrich triples with inverses and self-loops
+        self.triples = enrich(triples, num_nodes, num_rels)
+
+        print(f'Triples enriched in {kg.toc():.2}s')
+
+
+        print('num_rels = ', num_rels)
+        r = len(set(self.triples[:, 1].tolist()))
+        print('r = ', r)
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
-
+        assert len(indices) == triples.size(0), f'{len(indices)} != {triples.size(0)}'
         # triples = triples.tolist()
         # ctr = Counter((s, o) for (s, _, o) in triples)
         # print(ctr.most_common(250))
@@ -368,6 +374,8 @@ class LGCN2(nn.Module):
 
         p2i = {(s, o): i for i, (s, o) in enumerate(indices)}
         indices = torch.tensor(indices, dtype=torch.long)
+        assert indices.shape == (len(p2i), 2), f'{indices.shape} != {len(p2i), 2}'
+
         nt, _ = indices.size()
 
         # Compute indices for the horizontally and vertically stacked adjacency matrices.
