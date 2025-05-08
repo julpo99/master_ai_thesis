@@ -6,7 +6,7 @@ import optuna
 import torch
 import torch.nn.functional as F
 
-from models import RGCN, LGCN, LGCN2
+from models import RGCN, RGCN_EMB, LGCN
 
 
 def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, weights_size=None, rp=None, ldepth=None,
@@ -33,12 +33,12 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
         model = RGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                      num_classes=data.num_classes,
                      emb_dim=emb_dim, bases=bases).to(device)
-    elif model_name == 'lgcn':
-        model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
+    elif model_name == 'rgcn_emb':
+        model = RGCN_EMB(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                      num_classes=data.num_classes,
                      emb_dim=emb_dim, weights_size=weights_size, bases=bases).to(device)
-    elif model_name == 'lgcn2':
-        model = LGCN2(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
+    elif model_name == 'lgcn':
+        model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                       num_classes=data.num_classes,
                       emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth, bases=bases).to(device)
     else:
@@ -156,7 +156,7 @@ def objective_rgcn(trial):
     return withheld_acc
 
 
-def objective_lgcn(trial):
+def objective_rgcn_emb(trial):
     lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
     wd = trial.suggest_float('wd', 0.00001, 0.01, log=True)
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
@@ -168,16 +168,16 @@ def objective_lgcn(trial):
 
     config = dict(trial.params)
     config['trial.number'] = trial.number
-    wandb.init(project='lgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
+    wandb.init(project='rgcn_emb_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
 
-    withheld_acc = go(model_name='lgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
+    withheld_acc = go(model_name='rgcn_emb', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, weights_size=weights_size, bases=bases,
                       printnorms=None, trial=trial, wandb=wandb)
 
     return withheld_acc
 
 
-def objective_lgcn2(trial):
+def objective_lgcn(trial):
     lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
     wd = trial.suggest_float('wd', 0.00001, 0.1, log=True)
     l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
@@ -191,9 +191,9 @@ def objective_lgcn2(trial):
 
     config = dict(trial.params)
     config['trial.number'] = trial.number
-    wandb.init(project='lgcn2_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
+    wandb.init(project='lgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
 
-    withheld_acc = go(model_name='lgcn2', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
+    withheld_acc = go(model_name='lgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth,
                       bases=bases,
                       printnorms=None, trial=trial, wandb=wandb)
@@ -202,9 +202,9 @@ def objective_lgcn2(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn2'
-    # 'rgcn', 'rgcn_best', 'lgcn', 'lgcn_best', 'lgcn2', 'rgcn2_best'
-    # 'rgcn_optuna', 'lgcn_optuna', 'lgcn2_optuna'
+    model_to_run = 'lgcn'
+    # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
+    # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -220,23 +220,23 @@ if __name__ == '__main__':
            epochs=163, prune=True, optimizer='adamw', final=False, emb_dim=31, bases=None, printnorms=None)
 
 
-    elif model_to_run == 'lgcn':
-        # LGCN
-        go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=50, prune=True, optimizer='adam',
+    elif model_to_run == 'rgcn_emb':
+        # RGCN_EMB
+        go(model_name='rgcn_emb', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=50, prune=True, optimizer='adam',
            final=False, emb_dim=1600, weights_size=16, bases=None, printnorms=None, wandb=None)
 
-    elif model_to_run == 'lgcn_best':
-        # LGCN Best (optuna)
-        go(model_name='lgcn', name='amplus', lr=0.0016366409775459736, wd=0.0005755564025828806, l2=4.854651125478105e-05, epochs=45,
+    elif model_to_run == 'rgcn_emb_best':
+        # RGCN_EMB Best (optuna)
+        go(model_name='rgcn_emb', name='amplus', lr=0.0016366409775459736, wd=0.0005755564025828806, l2=4.854651125478105e-05, epochs=45,
            prune=True, optimizer='adam',
            final=False, emb_dim=1236, weights_size=49, bases=29, printnorms=None)
 
 
 
-    elif model_to_run == 'lgcn2':
-        # LGCN2
-        go(model_name='lgcn2', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=16, weights_size=0, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
+    elif model_to_run == 'lgcn':
+        # LGCN
+        go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
 
 
 
@@ -253,24 +253,24 @@ if __name__ == '__main__':
         trial = study.best_trial
         print(trial)
 
+    elif model_to_run == 'rgcn_emb_optuna':
+        # Optuna rgcn_emb
+        study = optuna.create_study(
+            direction='maximize',
+            study_name='rgcn_emb_optuna',
+        )
+        study.optimize(objective_rgcn_emb, n_trials=10000)
+        print('Best trial:')
+        trial = study.best_trial
+        print(trial)
+
     elif model_to_run == 'lgcn_optuna':
-        # Optuna rgcn
+        # Optuna lgcn
         study = optuna.create_study(
             direction='maximize',
             study_name='lgcn_optuna',
         )
         study.optimize(objective_lgcn, n_trials=10000)
-        print('Best trial:')
-        trial = study.best_trial
-        print(trial)
-
-    elif model_to_run == 'lgcn2_optuna':
-        # Optuna lgcn2
-        study = optuna.create_study(
-            direction='maximize',
-            study_name='lgcn2_optuna',
-        )
-        study.optimize(objective_lgcn2, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
         print(trial)

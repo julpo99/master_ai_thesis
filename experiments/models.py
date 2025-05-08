@@ -23,7 +23,7 @@ class RGCN(nn.Module):
         :param bases (int): Number of bases
         """
 
-        super(RGCN, self).__init__()
+        super().__init__()
 
         self.emb_dim = emb_dim
         self.bases = bases
@@ -142,9 +142,9 @@ class RGCN(nn.Module):
         return self.weights1.pow(p).sum() + self.bases1.pow(p).sum()
 
 
-class LGCN(nn.Module):
+class RGCN_EMB(nn.Module):
     """
-    Latent Graph Convolutional Networks (L-GCN)
+    Relational Graph Convolutional Network (R-GCN) with embeddings
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 1600,
@@ -160,7 +160,7 @@ class LGCN(nn.Module):
         :param bases (int): Number of bases
         """
 
-        super(LGCN, self).__init__()
+        super().__init__()
 
         self.emb_dim = emb_dim
         self.weights_size = weights_size
@@ -328,7 +328,7 @@ class LGCN(nn.Module):
         return self.weights1.pow(p).sum()
 
 
-class LGCN2(nn.Module):
+class LGCN(nn.Module):
     """
     Latent Graph Convolutional Networks (L-GCN)
     """

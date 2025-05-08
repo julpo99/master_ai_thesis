@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lgcn_optuna        # Job name
+#SBATCH --job-name=rgcn_emb-optuna    # Job name
 #SBATCH --time=12:00:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
