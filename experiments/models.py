@@ -426,12 +426,16 @@ class LGCN(nn.Module):
 
         # layer 1 weights
         self.weights1 = self._init_layer(rp, num_nodes, emb_dim)
+        print(f'weights1 shape: {self.weights1.shape}')
 
         # layer 2 weights
         self.weights2 = self._init_layer(rp, emb_dim, num_classes)
+        print(f'weights2 shape: {self.weights2.shape}')
 
         self.bias1 = nn.Parameter(torch.FloatTensor(emb_dim).zero_())
+        print(f'bias1 shape: {self.bias1.shape}')
         self.bias2 = nn.Parameter(torch.FloatTensor(num_classes).zero_())
+        print(f'bias2 shape: {self.bias2.shape}')
 
     def _init_layer(self, rows, columns, layers):
         """
@@ -450,9 +454,12 @@ class LGCN(nn.Module):
         rp, r, n, nt = self.rp, self.r, self.num_nodes, self.nt
 
         latents1 = self.to_latent1(self.nhots)
+        print(f'latents1 shape: {latents1.shape}')
         assert latents1.size() == (nt, rp)
         latents1 = torch.softmax(latents1, dim=1)
+        print(f'latents1 shape after softmax: {latents1.shape}')
         latents1 = latents1.t().reshape(-1)
+        print(f'latents1 shape after transpose: {latents1.shape}')
 
         # column normalize
         latents1 = latents1 / sum_sparse2(self.hindices, latents1, (n, n * rp), row=False)
