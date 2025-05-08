@@ -345,9 +345,8 @@ class LGCN2(nn.Module):
         """
 
 
-        super(LGCN2, self).__init__()
+        super().__init__()
 
-        self.num_rels = num_rels
         self.emb_dim = emb_dim
         self.bases = bases
         self.num_classes = num_classes
@@ -356,17 +355,19 @@ class LGCN2(nn.Module):
         kg.tic()
 
         # Enrich triples with inverses and self-loops
-        self.triples = enrich(triples, num_nodes, num_rels)
+        triples = enrich(triples, num_nodes, num_rels)
 
         print(f'Triples enriched in {kg.toc():.2}s')
 
 
-        print('num_rels = ', num_rels)
-        r = len(set(self.triples[:, 1].tolist()))
-        print('r = ', r)
+        print('num_rels (before enritchment) = ', num_rels)
+        r = len(set(triples[:, 1].tolist()))
+        print('r (uniques) = ', r)
+        r = num_rels * 2 + 1
+        print('r (num_rels * 2 + 1) = ', r)
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
-        assert len(indices) == triples.size(0), f'{len(indices)} != {triples.size(0)}'
+        # print(len(indices))
         # triples = triples.tolist()
         # ctr = Counter((s, o) for (s, _, o) in triples)
         # print(ctr.most_common(250))
@@ -389,13 +390,13 @@ class LGCN2(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-        # self.register_buffer('nhots', torch.zeros(nt, r)) # original code commented
+        # self.register_buffer('nhots', torch.zeros(nt, self.num_rels * 2 + 1)) # original code commented
         # triples_list = triples.tolist()
         # for s, p, o in triples_list:
         #     self.nhots[p2i[(s, o)], p] = 1
 
         # new code
-        self.register_buffer('nhots', torch.zeros(nt, num_rels))
+        self.register_buffer('nhots', torch.zeros(nt, r))
         s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
         rows = torch.tensor([p2i[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
         self.nhots[rows, p] = 1
