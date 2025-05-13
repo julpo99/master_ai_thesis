@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from experiments.utils import enrich, sum_sparse, adj, sum_sparse2, spmm
+from experiments.utils import enrich, sum_sparse_rgcn, adj, sum_sparse, spmm, sum_sparse_peter
 
 
 class RGCN(nn.Module):
@@ -51,7 +51,7 @@ class RGCN(nn.Module):
 
         # Initialize adjacency matrix values
         values = torch.ones(ver_indices.size(0), dtype=torch.float, device=triples.device)
-        values /= sum_sparse(ver_indices, values, ver_size)
+        values /= sum_sparse_rgcn(ver_indices, values, ver_size)
         print(f'Sum sparse computed in {kg.toc():.2}s')
 
         kg.tic()
@@ -190,7 +190,7 @@ class RGCN_EMB(nn.Module):
 
         # Initialize adjacency matrix values
         values = torch.ones(ver_indices.size(0), dtype=torch.float, device=triples.device)
-        values /= sum_sparse(ver_indices, values, ver_size)
+        values /= sum_sparse_rgcn(ver_indices, values, ver_size)
         print(f'Sum sparse computed in {kg.toc():.2}s')
 
         kg.tic()
@@ -352,31 +352,24 @@ class LGCN(nn.Module):
         self.num_classes = num_classes
 
 
-        kg.tic()
+        # kg.tic()
+        #
+        # # Enrich triples with inverses and self-loops
+        # triples = enrich(triples, num_nodes, num_rels)
+        #
+        # print(f'Triples enriched in {kg.toc():.2}s')
 
-        # Enrich triples with inverses and self-loops
-        triples = enrich(triples, num_nodes, num_rels)
 
-        print(f'Triples enriched in {kg.toc():.2}s')
-
-
-        print('num_rels (before enritchment) = ', num_rels)
         r = len(set(triples[:, 1].tolist()))
         print('r (uniques) = ', r)
-        r = num_rels * 2 + 1
-        print('r (num_rels * 2 + 1) = ', r)
+        r = num_rels
+        # r = num_rels * 2 + 1
+        # print('r (num_rels * 2 + 1) = ', r)
+
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
-        # print(len(indices))
-        # triples = triples.tolist()
-        # ctr = Counter((s, o) for (s, _, o) in triples)
-        # print(ctr.most_common(250))
-        # exit()
-
         p2i = {(s, o): i for i, (s, o) in enumerate(indices)}
         indices = torch.tensor(indices, dtype=torch.long)
-        assert indices.shape == (len(p2i), 2), f'{indices.shape} != {len(p2i), 2}'
-
         nt, _ = indices.size()
 
         # Compute indices for the horizontally and vertically stacked adjacency matrices.
@@ -390,18 +383,12 @@ class LGCN(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-        # self.register_buffer('nhots', torch.zeros(nt, self.num_rels * 2 + 1)) # original code commented
-        # triples_list = triples.tolist()
-        # for s, p, o in triples_list:
-        #     self.nhots[p2i[(s, o)], p] = 1
 
-        # new code
         self.register_buffer('nhots', torch.zeros(nt, r))
         s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
         rows = torch.tensor([p2i[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
         self.nhots[rows, p] = 1
 
-        # print(self.nhots.sum(dim=1).mean())
 
         # maps relations to latent relations (one per layer)
         to_latent1 = [nn.Linear(r, lwidth)]
@@ -426,16 +413,12 @@ class LGCN(nn.Module):
 
         # layer 1 weights
         self.weights1 = self._init_layer(rp, num_nodes, emb_dim)
-        print(f'weights1 shape: {self.weights1.shape}')
 
         # layer 2 weights
         self.weights2 = self._init_layer(rp, emb_dim, num_classes)
-        print(f'weights2 shape: {self.weights2.shape}')
 
         self.bias1 = nn.Parameter(torch.FloatTensor(emb_dim).zero_())
-        print(f'bias1 shape: {self.bias1.shape}')
         self.bias2 = nn.Parameter(torch.FloatTensor(num_classes).zero_())
-        print(f'bias2 shape: {self.bias2.shape}')
 
     def _init_layer(self, rows, columns, layers):
         """
@@ -454,15 +437,18 @@ class LGCN(nn.Module):
         rp, r, n, nt = self.rp, self.r, self.num_nodes, self.nt
 
         latents1 = self.to_latent1(self.nhots)
-        print(f'latents1 shape: {latents1.shape}')
         assert latents1.size() == (nt, rp)
         latents1 = torch.softmax(latents1, dim=1)
-        print(f'latents1 shape after softmax: {latents1.shape}')
         latents1 = latents1.t().reshape(-1)
-        print(f'latents1 shape after transpose: {latents1.shape}')
+        assert latents1.size() == (nt * rp,)
 
+        latents1_peter = latents1 / sum_sparse_peter(self.hindices, latents1, (n, n * rp), row=False)
         # column normalize
-        latents1 = latents1 / sum_sparse2(self.hindices, latents1, (n, n * rp), row=False)
+        latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False)
+
+        # check if latents1 and latents1_peter are the same
+        assert torch.allclose(latents1, latents1_peter, atol=1e-6), f'latents1: {latents1} latents1_peter: {latents1_peter}'
+
 
         assert self.hindices.size(0) == latents1.size(0), f'{self.indices.size()} {latents1.size()}'
 
@@ -487,18 +473,24 @@ class LGCN(nn.Module):
         assert latents2.size() == (nt, rp)
         latents2 = torch.softmax(latents2, dim=1)
         latents2 = latents2.t().reshape(-1)
+        assert latents2.size() == (nt * rp,)
         # latents2 = LACT(latents2)
 
+        latents2_peter = latents2 / sum_sparse_peter(self.vindices, latents2, (n * rp, n), row=True)
         # row normalize
-        latents2 = latents2 / sum_sparse2(self.vindices, latents2, (n * rp, n), row=True)
+        latents2 = latents2 / sum_sparse(self.vindices, latents2, (n * rp, n), row=True)
+
+        # check if latents2 and latents2_peter are the same
+        assert torch.allclose(latents2, latents2_peter, atol=1e-6), f'latents2: {latents2} latents2_peter: {latents2_peter}'
 
         # Multiply adjacencies by hidden
         # h = torch.mm(ver_graph, h) # sparse mm
         h = spmm(indices=self.vindices, values=latents2, size=(n * rp, n), xmatrix=h)
+        assert h.size() == (n * rp, e)
 
         h = h.view(rp, n, e)  # new dim for the relations
-
         weights = self.weights2
+        assert weights.size() == (rp, e, c)
 
         # Apply weights, sum over relations
         h = torch.einsum('rhc, rnh -> nc', weights, h)
@@ -506,7 +498,7 @@ class LGCN(nn.Module):
 
         assert h.size() == (n, c)
 
-        return h + self.bias2  # -- softmax is applied in the loss
+        return h + self.bias2  # -- softmax is applied in the losssl
 
     def penalty(self, p=2):
         """
