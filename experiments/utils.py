@@ -1,28 +1,31 @@
+from typing import Union, List, Tuple, Optional
+
 import torch
+from torch import Tensor
 from torch.autograd import Variable
 
 
-def enrich(triples: torch.Tensor, n: int, r: int) -> torch.Tensor:
+def enrich(triples: Tensor, n: int, r: int) -> Tensor:
     """
-    Enrich the triples with their inverses and self-loops
+    Enrich triples by adding inverse relations and self-loop edges.
 
-    :param triples (torch.Tensor): 2D tensor of triples (shape: [num_edges, 3])
-    :param n (int): Number of entities (nodes in the graph)
-    :param r (int): Number of relations
-    :return (torch.Tensor): Enriched triples (original + inverses + self-loops)
+    Args:
+        triples (Tensor): A 2D tensor of shape (num_triples, 3), where each row is (subject, relation, object).
+        n (int): The number of entities (nodes) in the graph.
+        r (int): The number of distinct relations (before adding inverses and self-loops).
+
+    Returns:
+        Tensor: A 2D tensor of enriched triples with shape (num_triples * 2 + n, 3),
+                including original triples, inverse relations, and self-loops.
     """
-
-    # Get the device of the input triples (CPU or CUDA)
     device = triples.device
 
-    # Create the inverse triples: (object, relation + r, subject)
     inverses = torch.cat([
         triples[:, 2:],
         triples[:, 1:2] + r,
         triples[:, :1]
     ], dim=1)
 
-    # Create self-loops: (node, self-loop relation id, node)
     node_indices = torch.arange(n, dtype=torch.long, device=device)[:, None]
     selfloops = torch.cat([
         node_indices,
@@ -30,11 +33,10 @@ def enrich(triples: torch.Tensor, n: int, r: int) -> torch.Tensor:
         node_indices
     ], dim=1)
 
-    # Concatenate original, inverse, and self-loop triples
     return torch.cat([triples, inverses, selfloops], dim=0)
 
 
-def sum_sparse(indices: torch.Tensor, values: torch.Tensor, size: tuple, row: bool = True) -> torch.Tensor:
+def sum_sparse_rgcn(indices: torch.Tensor, values: torch.Tensor, size: tuple, row: bool = True) -> torch.Tensor:
     """
     Sum the rows or columns of a sparse matrix, and redistribute the results back to the non-sparse row/column entries.
 
@@ -79,28 +81,94 @@ def sum_sparse(indices: torch.Tensor, values: torch.Tensor, size: tuple, row: bo
     return sums.view(k)
 
 
-def d(tensor=None):
+def spmm(
+        indices: torch.Tensor,
+        values: torch.Tensor,
+        size: Tuple[int, int],
+        xmatrix: torch.Tensor
+) -> torch.Tensor:
     """
-    Returns a device string either for the best available device,
-    or for the device corresponding to the argument
-    :param tensor:
-    :return:
+    Performs sparse matrix multiplication (SPMM) using autograd-capable operation.
+
+    Args:
+        indices (torch.Tensor): Tensor of shape (nnz, 2) with row and column indices of non-zero entries.
+        values (torch.Tensor): Tensor of shape (nnz,) containing values of the sparse matrix.
+        size (Tuple[int, int]): Shape of the sparse matrix (rows, columns).
+        xmatrix (torch.Tensor): Dense matrix of shape (columns, D) to multiply with.
+
+    Returns:
+        torch.Tensor: The result of sparse @ dense multiplication, shape (rows, D).
     """
-    if tensor is None:
-        return 'cuda' if torch.cuda.is_available() else 'cpu'
-    if type(tensor) == bool:
-        return 'cuda' if tensor else 'cpu'
-    return 'cuda' if tensor.is_cuda else 'cpu'
+    assert indices.device == values.device == xmatrix.device, \
+        "All tensors must be on the same device."
+
+    return sparse_mm_autograd(indices.t(), values, size, xmatrix)
 
 
-def spmm(indices, values, size, xmatrix):
-    cuda = indices.is_cuda
+def sum_sparse(
+        indices: torch.Tensor,
+        values: torch.Tensor,
+        size: Tuple[int, int],
+        row: bool = True
+) -> torch.Tensor:
+    """
+    Sums the rows or columns of a sparse matrix defined by (indices, values) and redistributes
+    the sums back to each corresponding entry.
 
-    sm = sparsemm(cuda)
-    return sm(indices.t(), values, size, xmatrix)
+    Supports optional batching by prepending batch dimensions.
+
+    Args:
+        indices (torch.Tensor): Shape (B?, nnz, 2). Sparse indices of the matrix.
+        values (torch.Tensor): Shape (B?, nnz). Non-zero values of the matrix.
+        size (Tuple[int, int]): Shape of the sparse matrix (rows, columns).
+        row (bool): If True, sum rows; else sum columns.
+
+    Returns:
+        torch.Tensor: Tensor of shape (B?, nnz), sum per entry's row/column.
+    """
+
+    assert len(indices.shape) == len(values.shape) + 1, "Mismatch in index/value tensor dimensions"
+
+    if indices.dim() == 2:
+        # Add batch dimension
+        indices = indices.unsqueeze(0)  # (1, nnz, 2)
+        values = values.unsqueeze(0)  # (1, nnz)
+        bdims = None
+    else:
+        # Fold up batch dimension
+        bdims = indices.shape[:-2]
+        k, r = indices.shape[-2:]
+        assert bdims == values.shape[:-1], "Batch dimensions must match"
+        assert values.shape[-1] == k, "Number of values must match number of indices"
+
+        indices = indices.view(-1, k, r)
+        values = values.view(-1, k)
+
+    b, k, r = indices.shape
+
+    if not row:
+        # Transpose index pairs
+        indices = torch.cat([indices[:, :, 1:2], indices[:, :, 0:1]], dim=2)
+        size = (size[1], size[0])
+
+    ones = torch.ones((size[1], 1), device=indices.device)  # (cols, 1)
+    ones = ones.expand(b, -1, -1).contiguous()  # (b, cols, 1)
 
 
-def sum_sparse2(indices, values, size, row=True):
+    sums_peter = batchmm_peter(indices, values, size, ones)
+
+    # Sparse batch matrix multiplication
+    sums = batchmm(indices, values, size, ones)  # shape: (b, rows, 1)
+
+    # check if the two sums are equal
+    assert torch.allclose(sums, sums_peter), "The two sums are not equal"
+
+    bindex = torch.arange(b, device=indices.device)[:, None].expand(b, k)
+    result = sums[bindex, indices[:, :, 0], 0]  # gather sums for each original index
+
+    return result.view(*bdims, k) if bdims else result.view(k)
+
+def sum_sparse_peter(indices, values, size, row=True):
     """
     Sum the rows or columns of a sparse matrix, and redistribute the
     results back to the non-sparse row/column entries
@@ -135,7 +203,7 @@ def sum_sparse2(indices, values, size, row=True):
         indices = torch.cat([indices[:, :, 1:2], indices[:, :, 0:1]], dim=2)
         size = size[1], size[0]
 
-    ones = torch.ones((size[1], 1), device=d(indices))
+    ones = torch.ones((size[1], 1), device=indices.device)
 
     s, _ = ones.size()
     ones = ones[None, :, :].expand(b, s, 1).contiguous()
@@ -143,8 +211,13 @@ def sum_sparse2(indices, values, size, row=True):
     # print(indices.size(), values.size(), size, ones.size())
     # sys.exit()
 
+    sums_peter = batchmm_peter(indices, values, size, ones)
     sums = batchmm(indices, values, size, ones)  # row/column sums
-    bindex = torch.arange(b, device=d(indices))[:, None].expand(b, indices.size(1))
+
+    # check if the two sums are equal
+    assert torch.allclose(sums, sums_peter), "The two sums are not equal"
+
+    bindex = torch.arange(b, device=indices.device)[:, None].expand(b, indices.size(1))
     sums = sums[bindex, indices[:, :, 0], 0]
 
     if bdims is None:
@@ -153,7 +226,55 @@ def sum_sparse2(indices, values, size, row=True):
     return sums.view(*bdims + (k,))
 
 
-def batchmm(indices, values, size, xmatrix, cuda=None):
+def batchmm(
+    indices: Tensor,
+    values: Tensor,
+    size: Tuple[int, int],
+    xmatrix: Tensor,
+) -> Tensor:
+    """
+    Performs batch multiplication of sparse matrices (in COO format) with a batch of dense matrices.
+
+    Each sparse matrix is defined by its `indices`, `values`, and `size`, and is multiplied with
+    the corresponding dense matrix from `xmatrix`.
+
+    Args:
+        indices (Tensor): Tensor of shape (B, N, 2) containing indices for the sparse matrices in batch,
+                          where B is the batch size and N is the number of non-zero entries.
+        values (Tensor): Tensor of shape (B, N) containing the non-zero values for each sparse matrix in the batch.
+        size (Tuple[int, int]): (height, width) of each sparse matrix.
+        xmatrix (Tensor): Dense matrix of shape (B, width, D) to be multiplied.
+
+    Returns:
+        Tensor: Resulting tensor of shape (B, height, D) from the sparse-dense matrix multiplication.
+    """
+
+    device = indices.device
+    B, N, _ = indices.size()
+    height, width = size
+
+    size_tensor = torch.tensor(size, device=device, dtype=torch.long)
+
+    # Construct batched indices by offsetting each batch appropriately
+    bmult = size_tensor[None, None, :].expand(B, N, 2)
+    batch_ids = torch.arange(B, device=device, dtype=torch.long)[:, None, None].expand(B, N, 2)
+
+    bindices = (batch_ids * bmult + indices).view(B * N, 2)
+
+    bvalues = values.contiguous().view(-1)
+
+    _, _, D = xmatrix.size()
+    bxmatrix = xmatrix.view(-1, D)
+
+    assert bindices.device == bvalues.device == bxmatrix.device
+
+    # Perform sparse matrix multiplication
+    result = sparse_mm_autograd(bindices.t(), bvalues, (height * B, width), bxmatrix)
+
+    return result.view(B, height, D)
+
+
+def batchmm_peter(indices, values, size, xmatrix, cuda=None):
     """
     Multiply a batch of sparse matrices (indices, values, size) with a batch of dense matrices (xmatrix)
 
@@ -185,146 +306,107 @@ def batchmm(indices, values, size, xmatrix, cuda=None):
     b, w, z = xmatrix.size()
     bxmatrix = xmatrix.view(-1, z)
 
-    sm = sparsemm(cuda)
-
-    result = sm(bindices.t(), bvalues, bfsize, bxmatrix)
+    assert bindices.device == bvalues.device == bxmatrix.device
+    result = sparse_mm_autograd(bindices.t(), bvalues, tuple(bfsize.tolist()), bxmatrix)
 
     return result.view(b, height, -1)
 
 
-def sparsemm(use_cuda):
+def sparse_mm_autograd(
+        indices: torch.Tensor,
+        values: torch.Tensor,
+        size: Tuple[int, int],
+        xmatrix: torch.Tensor
+) -> torch.Tensor:
     """
-    :param use_cuda:
-    :return:
+    Performs sparse matrix multiplication with autograd support using PyTorch's native API.
+
+    This function constructs a sparse COO matrix from given indices and values, then multiplies it
+    with a dense matrix. It supports backpropagation through both the sparse values and the dense matrix.
+
+    Args:
+        indices (torch.Tensor): A tensor of shape (2, nnz) containing the row and column indices
+            of the non-zero elements in the sparse matrix.
+        values (torch.Tensor): A tensor of shape (nnz,) containing the non-zero values of the sparse matrix.
+        size (Tuple[int, int]): The shape (rows, cols) of the resulting sparse matrix.
+        xmatrix (torch.Tensor): A dense tensor of shape (cols, d) to be multiplied.
+
+    Returns:
+        torch.Tensor: The resulting dense tensor of shape (rows, d) after sparse × dense multiplication.
     """
+    A = torch.sparse_coo_tensor(indices, values, size, device=values.device)
+    A = A.coalesce()  # Ensures proper gradient flow by removing duplicate indices
+    return torch.sparse.mm(A, xmatrix)
 
-    return SparseMMGPU.apply if use_cuda else SparseMMCPU.apply
 
-
-class SparseMMCPU(torch.autograd.Function):
+def intlist(
+        tensor: Union[torch.Tensor,
+        List[int],
+        Tuple[int, ...]]
+) -> List[int]:
     """
-    Sparse matrix multiplication with gradients over the value-vector
+    Converts a 1D tensor to a list of ints.
+    If the input is already a list or tuple, it is returned unchanged.
 
-    Does not work with batch dim.
+    Args:
+        tensor (torch.Tensor | list | tuple): Input to be converted.
+
+    Returns:
+        List[int]: List of ints with the same values as the input.
     """
-
-    @staticmethod
-    def forward(ctx, indices, values, size, xmatrix):
-        # print(type(size), size, list(size), intlist(size))
-        # print(indices.size(), values.size(), torch.Size(intlist(size)))
-
-        matrix = torch.sparse_coo_tensor(indices, values, torch.Size(intlist(size)))
-
-        ctx.indices, ctx.matrix, ctx.xmatrix = indices, matrix, xmatrix
-
-        return torch.mm(matrix, xmatrix)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        grad_output = grad_output.data
-
-        # -- this will break recursive autograd, but it's the only way to get grad over sparse matrices
-
-        i_ixs = ctx.indices[0, :]
-        j_ixs = ctx.indices[1, :]
-        output_select = grad_output[i_ixs, :]
-        xmatrix_select = ctx.xmatrix[j_ixs, :]
-
-        grad_values = (output_select * xmatrix_select).sum(dim=1)
-
-        grad_xmatrix = torch.mm(ctx.matrix.t(), grad_output)
-        return None, Variable(grad_values), None, Variable(grad_xmatrix)
-
-
-class SparseMMGPU(torch.autograd.Function):
-    """
-    Sparse matrix multiplication with gradients over the value-vector
-
-    Does not work with batch dim.
-    """
-
-    @staticmethod
-    def forward(ctx, indices, values, size, xmatrix):
-        # print(type(size), size, list(size), intlist(size))
-
-        matrix = torch.sparse_coo_tensor(indices, values, torch.Size(intlist(size)), device='cuda')
-
-        ctx.indices, ctx.matrix, ctx.xmatrix = indices, matrix, xmatrix
-
-        return torch.mm(matrix, xmatrix)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        grad_output = grad_output.data
-
-        # -- this will break recursive autograd, but it's the only way to get grad over sparse matrices
-
-        i_ixs = ctx.indices[0, :]
-        j_ixs = ctx.indices[1, :]
-        output_select = grad_output[i_ixs]
-        xmatrix_select = ctx.xmatrix[j_ixs]
-
-        grad_values = (output_select * xmatrix_select).sum(dim=1)
-
-        grad_xmatrix = torch.mm(ctx.matrix.t(), grad_output)
-        return None, Variable(grad_values), None, Variable(grad_xmatrix)
-
-
-def intlist(tensor):
-    """
-    A slow and stupid way to turn a tensor into an iterable over ints
-    :param tensor:
-    :return:
-    """
-    if type(tensor) is list or type(tensor) is tuple:
-        return tensor
+    if isinstance(tensor, (list, tuple)):
+        return list(tensor)
 
     tensor = tensor.squeeze()
+    assert tensor.ndim == 1, f"Expected 1D tensor after squeeze, got shape {tensor.shape}"
 
-    assert len(tensor.size()) == 1
-
-    s = tensor.size()[0]
-
-    l = [None] * s
-    for i in range(s):
-        l[i] = int(tensor[i])
-
-    return l
+    return [int(x) for x in tensor]
 
 
-def adj(triples: torch.Tensor, num_nodes: int, num_rels: int, cuda: bool = False, vertical: bool = True) -> tuple:
+def adj(
+        triples: torch.Tensor,
+        num_nodes: int,
+        num_rels: int,
+        vertical: bool = True
+) -> Tuple[torch.Tensor, Tuple[int, int]]:
     """
-    Computes a sparse adjacency matrix for the given graph (the adjacency matrices of all relations are stacked vertically or horizontally).
+    Computes a sparse adjacency matrix for the given graph by stacking
+    adjacency matrices of all relations vertically or horizontally.
 
+    Args:
+        triples (torch.Tensor): Tensor of shape (num_edges, 3), each row is (subject, relation, object).
+        num_nodes (int): Total number of nodes in the graph.
+        num_rels (int): Total number of relation types.
+        vertical (bool): If True, stack adjacency matrices vertically (shape: [r*n, n]),
+                         else horizontally (shape: [n, r*n]).
 
-    :param triples (torch.Tensor): 2D tensor of triples (subject, relation, object)
-    :param num_nodes (int): Number of nodes
-    :param num_rels (int): Number of relations
-    :param cuda (bool): Whether to use CUDA
-    :param vertical (bool): If True, stack adjacency matrices vertically; otherwise, horizontally.
-    :return tuple: Tuple containing the adjacency matrix indices and its size
+    Returns:
+        Tuple[torch.Tensor, Tuple[int, int]]: A tuple where the first element is a 2D tensor of indices
+        for the sparse matrix (shape: [num_edges, 2]), and the second element is the shape of the matrix.
     """
+    device = triples.device
 
-    # Get adjacency matrix size
+    # Define matrix shape
     size = (num_rels * num_nodes, num_nodes) if vertical else (num_nodes, num_rels * num_nodes)
 
-    # Extract subjects (from), relations, and objects (to)
-    fr, rel, to = triples[:, 0].clone(), triples[:, 1].clone(), triples[:, 2].clone()
+    # Extract subject, relation, object
+    fr = triples[:, 0].clone()
+    rel = triples[:, 1].clone()
+    to = triples[:, 2].clone()
 
-    # Compute offsets based on stacking mode
     offset = rel * num_nodes
+    fr_offset = fr + offset if vertical else fr
+    to_offset = to + offset if not vertical else to
 
-    if vertical:
-        fr += offset
-    else:
-        to += offset
+    # Combine indices
+    indices = torch.cat([
+        fr_offset.unsqueeze(0),
+        to_offset.unsqueeze(0)
+    ], dim=0)
 
-    # Stack adjacency indices
-    indices = torch.cat([fr.unsqueeze(0), to.unsqueeze(0)], dim=0)
-
-    # Validate adjacency matrix indices
+    # Validate bounds
     assert indices.size(1) == triples.size(0), "Mismatch in number of triples and indices"
     assert indices[0].max() < size[0], f"Max index {indices[0].max()} exceeds matrix size {size[0]}"
     assert indices[1].max() < size[1], f"Max index {indices[1].max()} exceeds matrix size {size[1]}"
 
-    return indices.t(), size
+    return indices.t().to(device), size
