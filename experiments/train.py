@@ -82,7 +82,7 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
         if l2 > 0.0:
             loss += l2 * model.penalty()
 
-        # Backward pass (compute  gradients)
+        # Backward pass (compute gradients)
         loss.backward()
 
         # Update weights
