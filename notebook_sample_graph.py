@@ -1,14 +1,13 @@
-from collections import Counter
-
 import kgbench as kg
 import torch
 import torch.nn.functional as F
 
-from experiments.models import RGCN, LGCN, LGCN2
+from experiments.models import LGCN
 
 
-def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, prune=False, optimizer='adam',
-       final=False, emb_dim=16, weights_size=16, rp=16, ldepth=0, lwidth=64, bases=None, printnorms=None):
+def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, weights_size=None, rp=None, ldepth=None,
+       lwidth=None, bases=None,
+       printnorms=None, trial=None, wandb=None):
     # Manually created sample graph
     triples = torch.tensor([[1, 0, 0],
                             [2, 1, 0],
@@ -16,30 +15,34 @@ def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, pru
                             [3, 0, 0],
                             [4, 2, 2],
                             [5, 1, 2],
-                            [5, 0, 4]])
+                            [5, 0, 4],
+                            [5, 1, 4]])
     num_entities = 6
     num_relations = 3
     num_classes = 2
     training = torch.tensor([[5, 1],
                              [1, 0],
                              [0, 0],
-                             [4, 1]])
+                             [4, 1],
+                             [5, 1]])
     withheld = torch.tensor([[3, 1],
                              [2, 0]])
 
-    print(f'Model: {model_name}')
-    print(f'Loaded {triples.size(0)} triples, {num_entities} entities, {num_relations} relations')
+    print(f'Model: {model_name}, Dataset: {name}, ')
+    print(
+        f'Parameters: lr={lr}, wd={wd}, l2={l2}, epochs={epochs}, prune={prune}, optimizer={optimizer}, final={final},'
+        f' emb_dim={emb_dim}, weights_size={weights_size}, rp={rp}, ldepth={ldepth}, lwidth={lwidth}, bases={bases}')
 
     kg.tic()
 
-    # Initialize R-GCN model
+    # Initialize LGCN model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == torch.device("cuda"):
         print('Using CUDA')
 
     model = LGCN(triples, num_nodes=num_entities, num_rels=num_relations,
                  num_classes=num_classes,
-                 emb_dim=emb_dim, weights_size=weights_size, bases=bases).to(device)
+                 emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth, bases=bases).to(device)
 
     print(f'Model created in {kg.toc():.3}s')
 
@@ -79,7 +82,7 @@ def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, pru
         if l2 > 0.0:
             loss += l2 * model.penalty()
 
-        # Backward pass (compute  gradients)
+        # Backward pass (compute gradients)
         loss.backward()
 
         # Update weights
@@ -106,5 +109,5 @@ def go(model_name='rgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0, epochs=50, pru
 
 if __name__ == '__main__':
     # LGCN
-    go(model_name='lgcn', name='amplus', lr=0.01, wd=0.0, l2=0.0005, epochs=150, prune=True, optimizer='adam',
-       final=False, emb_dim=1600, weights_size=16, bases=20, printnorms=None)
+    go(model_name='lgcn', name='sample', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
+       final=False, emb_dim=128, weights_size=None, rp=16, ldepth=4, lwidth=128, bases=None, printnorms=None)

@@ -28,3 +28,8 @@ print(tensor_2d_view)
 
 tensor_2d_reshape = tensor_2d.reshape(5, 3)
 print(tensor_2d_reshape)
+
+concatenated_tensor = torch.cat((tensor_2d, tensor_2d), dim=0)
+stacked_tensor = torch.stack((tensor_2d, tensor_2d), dim=0)
+print(concatenated_tensor)
+print(stacked_tensor)
