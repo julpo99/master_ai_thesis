@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from experiments.utils import enrich, sum_sparse_rgcn, adj, sum_sparse, spmm, sum_sparse_peter
+from experiments.utils import enrich, sum_sparse_rgcn, adj, sum_sparse, spmm
 
 
 class RGCN(nn.Module):
@@ -210,7 +210,6 @@ class RGCN_EMB(nn.Module):
         # The initialisation below is faster but not as good in our experience
         # nn.init.xavier_uniform_(self.node_embeddings)
 
-
         # Initialize weight matrices
         self.weights1, self.bases1 = self._init_layer(num_rels, emb_dim, weights_size, bases)
         self.weights2, self.bases2 = self._init_layer(num_rels, weights_size, num_classes, bases)
@@ -344,13 +343,11 @@ class LGCN(nn.Module):
         :param emb_dim (int): Embedding size
         """
 
-
         super().__init__()
 
         self.emb_dim = emb_dim
         self.bases = bases
         self.num_classes = num_classes
-
 
         # kg.tic()
         #
@@ -358,7 +355,6 @@ class LGCN(nn.Module):
         # triples = enrich(triples, num_nodes, num_rels)
         #
         # print(f'Triples enriched in {kg.toc():.2}s')
-
 
         r = len(set(triples[:, 1].tolist()))
         print('r (uniques) = ', r)
@@ -383,12 +379,10 @@ class LGCN(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-
         self.register_buffer('nhots', torch.zeros(nt, r))
         s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
         rows = torch.tensor([p2i[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
         self.nhots[rows, p] = 1
-
 
         # maps relations to latent relations (one per layer)
         to_latent1 = [nn.Linear(r, lwidth)]
@@ -442,13 +436,8 @@ class LGCN(nn.Module):
         latents1 = latents1.t().reshape(-1)
         assert latents1.size() == (nt * rp,)
 
-        latents1_peter = latents1 / sum_sparse_peter(self.hindices, latents1, (n, n * rp), row=False)
         # column normalize
         latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False)
-
-        # check if latents1 and latents1_peter are the same
-        assert torch.allclose(latents1, latents1_peter, atol=1e-6), f'latents1: {latents1} latents1_peter: {latents1_peter}'
-
 
         assert self.hindices.size(0) == latents1.size(0), f'{self.indices.size()} {latents1.size()}'
 
@@ -462,6 +451,7 @@ class LGCN(nn.Module):
 
         # Apply weights and sum over relations
         # h = torch.mm(hor_graph, )
+
         h = spmm(indices=self.hindices, values=latents1, size=(n, n * rp), xmatrix=weights.view(rp * n, e))
         assert h.size() == (n, e)
 
@@ -476,12 +466,8 @@ class LGCN(nn.Module):
         assert latents2.size() == (nt * rp,)
         # latents2 = LACT(latents2)
 
-        latents2_peter = latents2 / sum_sparse_peter(self.vindices, latents2, (n * rp, n), row=True)
         # row normalize
         latents2 = latents2 / sum_sparse(self.vindices, latents2, (n * rp, n), row=True)
-
-        # check if latents2 and latents2_peter are the same
-        assert torch.allclose(latents2, latents2_peter, atol=1e-6), f'latents2: {latents2} latents2_peter: {latents2_peter}'
 
         # Multiply adjacencies by hidden
         # h = torch.mm(ver_graph, h) # sparse mm
