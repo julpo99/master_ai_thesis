@@ -356,11 +356,7 @@ class LGCN(nn.Module):
         #
         # print(f'Triples enriched in {kg.toc():.2}s')
 
-        r = len(set(triples[:, 1].tolist()))
-        print('r (uniques) = ', r)
         r = num_rels
-        # r = num_rels * 2 + 1
-        # print('r (num_rels * 2 + 1) = ', r)
 
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         indices = list(set(map(tuple, triples[:, [0, 2]].tolist())))
@@ -385,20 +381,24 @@ class LGCN(nn.Module):
         self.nhots[rows, p] = 1
 
         # maps relations to latent relations (one per layer)
-        to_latent1 = [nn.Linear(r, lwidth)]
-        to_latent2 = [nn.Linear(r, lwidth)]
-        for _ in range(ldepth - 1):
+        if ldepth == 0:
+            to_latent1 = [nn.Linear(r, rp)]
+            to_latent2 = [nn.Linear(r, rp)]
+        else:
+            to_latent1 = [nn.Linear(r, lwidth)]
+            to_latent2 = [nn.Linear(r, lwidth)]
+            for _ in range(ldepth - 1):
+                to_latent1.append(nn.ReLU())
+                to_latent2.append(nn.ReLU())
+
+                to_latent1.append(nn.Linear(lwidth, lwidth))
+                to_latent2.append(nn.Linear(lwidth, lwidth))
+
             to_latent1.append(nn.ReLU())
             to_latent2.append(nn.ReLU())
 
-            to_latent1.append(nn.Linear(lwidth, lwidth))
-            to_latent2.append(nn.Linear(lwidth, lwidth))
-
-        to_latent1.append(nn.ReLU())
-        to_latent2.append(nn.ReLU())
-
-        to_latent1.append(nn.Linear(lwidth, rp))
-        to_latent2.append(nn.Linear(lwidth, rp))
+            to_latent1.append(nn.Linear(lwidth, rp))
+            to_latent2.append(nn.Linear(lwidth, rp))
 
         self.to_latent1 = nn.Sequential(*to_latent1)
         self.to_latent2 = nn.Sequential(*to_latent2)
@@ -475,7 +475,9 @@ class LGCN(nn.Module):
         assert h.size() == (n * rp, e)
 
         h = h.view(rp, n, e)  # new dim for the relations
+
         weights = self.weights2
+
         assert weights.size() == (rp, e, c)
 
         # Apply weights, sum over relations
@@ -492,4 +494,110 @@ class LGCN(nn.Module):
         """
         assert p == 2, "Only L2 penalty is supported"
 
+        return self.weights1.pow(p).sum()
+
+
+class LGCN_REL_EMB(nn.Module):
+    """
+    Latent Graph Convolutional Network with explicit relation embeddings.
+    """
+
+    def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
+                 rp=16):
+        """
+        Initialize the LGCN model with relation embeddings.
+
+        Args:
+            triples (torch.Tensor): Tensor of shape (num_triples, 3) containing (subject, relation, object) triples.
+            num_nodes (int): Number of nodes/entities in the graph.
+            num_rels (int): Number of unique relations.
+            num_classes (int): Number of output classes.
+            emb_dim (int): Dimension of node embeddings.
+            rp (int): Relation projection dimension.
+            bases (int, optional): Number of bases for basis decomposition (not used in this implementation).
+        """
+        super().__init__()
+
+        self.emb_dim = emb_dim
+        self.num_classes = num_classes
+        self.rp = rp
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
+
+        # Extract unique (subject, object) pairs
+        pairs = triples[:, [0, 2]]
+        unique_pairs, inverse_indices = torch.unique(pairs, dim=0, return_inverse=True)
+        self.nt = unique_pairs.size(0)  # Number of unique node pairs
+
+        # Create a mapping from (subject, object) to index
+        pair_to_index = {tuple(pair.tolist()): idx for idx, pair in enumerate(unique_pairs)}
+
+        # Construct the binary relation matrix (nt x num_rels)
+        relation_matrix = torch.zeros(self.nt, num_rels)
+        for idx, (s, r, o) in enumerate(triples.tolist()):
+            pair_idx = pair_to_index[(s, o)]
+            relation_matrix[pair_idx, r] = 1.0
+        self.register_buffer('relation_matrix', relation_matrix)
+
+        # Define learnable relation embeddings (num_rels x rp)
+        self.relation_embeddings = nn.Parameter(torch.randn(num_rels, rp))
+
+        # Compute indices for horizontal and vertical adjacency matrices
+        s, o = unique_pairs[:, 0], unique_pairs[:, 1]
+        rm = torch.arange(rp)
+        s_expanded = s.unsqueeze(1) * rp + rm
+        o_expanded = o.unsqueeze(1) * rp + rm
+        self.register_buffer('hindices', torch.stack([s_expanded.flatten(), o.repeat(rp)], dim=1))
+        self.register_buffer('vindices', torch.stack([s.repeat(rp), o_expanded.flatten()], dim=1))
+
+        # Initialize weights for two layers
+        self.weights1 = nn.Parameter(torch.empty(rp, num_nodes, emb_dim))
+        self.weights2 = nn.Parameter(torch.empty(rp, emb_dim, num_classes))
+        nn.init.xavier_uniform_(self.weights1, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.weights2, gain=nn.init.calculate_gain('relu'))
+
+        # Bias terms
+        self.bias1 = nn.Parameter(torch.zeros(emb_dim))
+        self.bias2 = nn.Parameter(torch.zeros(num_classes))
+
+    def forward(self):
+        """
+        Forward pass of the LGCN model.
+        """
+        # Compute latent representations for each node pair
+        latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp)
+        latents = torch.softmax(latents, dim=1)  # Normalize across relations
+        latents_flat = latents.t().reshape(-1)  # Shape: (nt * rp,)
+
+        # Normalize latents for horizontal adjacency
+        latents_norm = latents_flat / sum_sparse(self.hindices, latents_flat,
+                                                 (self.num_nodes, self.num_nodes * self.rp), row=False)
+
+        # First layer: Apply weights and aggregate
+        weights1_flat = self.weights1.view(self.rp * self.num_nodes, self.emb_dim)
+        h = spmm(self.hindices, latents_norm, (self.num_nodes, self.num_nodes * self.rp), weights1_flat)
+        h = F.relu(h + self.bias1)
+
+        # Normalize latents for vertical adjacency
+        latents_norm = latents_flat / sum_sparse(self.vindices, latents_flat,
+                                                 (self.num_nodes * self.rp, self.num_nodes), row=True)
+
+        # Second layer: Aggregate and apply weights
+        h = spmm(self.vindices, latents_norm, (self.num_nodes * self.rp, self.num_nodes), h)
+        h = h.view(self.rp, self.num_nodes, self.emb_dim)
+        h = torch.einsum('rhc,rnh->nc', self.weights2, h)
+
+        return h + self.bias2  # Output logits
+
+    def penalty(self, p=2):
+        """
+        Compute L2 penalty for regularization.
+
+        Args:
+            p (int): Norm degree (only supports L2 norm).
+
+        Returns:
+            torch.Tensor: L2 penalty.
+        """
+        assert p == 2, "Only L2 penalty is supported."
         return self.weights1.pow(p).sum()
