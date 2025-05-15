@@ -110,4 +110,4 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
 if __name__ == '__main__':
     # LGCN
     go(model_name='lgcn', name='sample', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-       final=False, emb_dim=128, weights_size=None, rp=16, ldepth=4, lwidth=128, bases=None, printnorms=None)
+       final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
