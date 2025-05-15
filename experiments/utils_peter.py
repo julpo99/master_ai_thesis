@@ -1,3 +1,7 @@
+import torch
+from torch.autograd import Variable
+from typing import Tuple, Union, List
+
 def intlist_peter(tensor):
     """
     A slow and stupid way to turn a tensor into an iterable over ints
@@ -19,6 +23,12 @@ def intlist_peter(tensor):
 
     return l
 
+def spmm_peter(indices, values, size, xmatrix):
+
+    cuda = indices.is_cuda
+
+    sm = sparsemm_peter(cuda)
+    return sm(indices.t(), values, size, xmatrix)
 
 def sparsemm_peter(use_cuda):
     """
@@ -149,7 +159,7 @@ def sum_sparse_peter(indices, values, size, row=True):
     # print(indices.size(), values.size(), size, ones.size())
     # sys.exit()
 
-    sums = batchmm(indices, values, size, ones)  # row/column sums
+    sums = batchmm_peter(indices, values, size, ones)  # row/column sums
     bindex = torch.arange(b, device=indices.device)[:, None].expand(b, indices.size(1))
     sums = sums[bindex, indices[:, :, 0], 0]
 
@@ -157,3 +167,101 @@ def sum_sparse_peter(indices, values, size, row=True):
         return sums.view(k)
 
     return sums.view(*bdims + (k,))
+
+
+def batchmm_peter(indices, values, size, xmatrix, cuda=None):
+    """
+    Multiply a batch of sparse matrices (indices, values, size) with a batch of dense matrices (xmatrix)
+
+    :param indices:
+    :param values:
+    :param size:
+    :param xmatrix:
+    :return:
+    """
+
+    if cuda is None:
+        cuda = indices.is_cuda
+
+    b, n, r = indices.size()
+    dv = 'cuda' if cuda else 'cpu'
+
+    height, width = size
+
+    size = torch.tensor(size, device=dv, dtype=torch.long)
+
+    bmult = size[None, None, :].expand(b, n, 2)
+    m = torch.arange(b, device=dv, dtype=torch.long)[:, None, None].expand(b, n, 2)
+
+    bindices = (m * bmult).view(b*n, r) + indices.view(b*n, r)
+
+    bfsize = Variable(size * b)
+    bvalues = values.contiguous().view(-1)
+
+    b, w, z = xmatrix.size()
+    bxmatrix = xmatrix.view(-1, z)
+
+    sm = sparsemm_peter(cuda)
+
+    result = sm(bindices.t(), bvalues, bfsize, bxmatrix)
+
+    return result.view(b, height, -1)
+
+def batchmm_peter_updated(indices, values, size, xmatrix, cuda=None):
+    """
+    Multiply a batch of sparse matrices (indices, values, size) with a batch of dense matrices (xmatrix)
+
+    :param indices:
+    :param values:
+    :param size:
+    :param xmatrix:
+    :return:
+    """
+
+    if cuda is None:
+        cuda = indices.is_cuda
+
+    b, n, r = indices.size()
+    dv = 'cuda' if cuda else 'cpu'
+
+    height, width = size
+
+    size = torch.tensor(size, device=dv, dtype=torch.long)
+
+    bmult = size[None, None, :].expand(b, n, 2)
+    m = torch.arange(b, device=dv, dtype=torch.long)[:, None, None].expand(b, n, 2)
+
+    bindices = (m * bmult).view(b * n, r) + indices.view(b * n, r)
+
+    bfsize = Variable(size * b)
+    bvalues = values.contiguous().view(-1)
+
+    b, w, z = xmatrix.size()
+    bxmatrix = xmatrix.view(-1, z)
+
+    assert bindices.device == bvalues.device == bxmatrix.device
+    result = spmm_peter(bindices.t(), bvalues, tuple(bfsize.tolist()), bxmatrix)
+
+    return result.view(b, height, -1)
+
+
+def intlist(tensor):
+    """
+    A slow and stupid way to turn a tensor into an iterable over ints
+    :param tensor:
+    :return:
+    """
+    if type(tensor) is list or type(tensor) is tuple:
+        return tensor
+
+    tensor = tensor.squeeze()
+
+    assert len(tensor.size()) == 1
+
+    s = tensor.size()[0]
+
+    l = [None] * s
+    for i in range(s):
+        l[i] = int(tensor[i])
+
+    return l
