@@ -6,7 +6,7 @@ import optuna
 import torch
 import torch.nn.functional as F
 
-from models import RGCN, RGCN_EMB, LGCN
+from models import RGCN, RGCN_EMB, LGCN, LGCN_REL_EMB
 
 
 def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, weights_size=None, rp=None, ldepth=None,
@@ -41,6 +41,10 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
         model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                       num_classes=data.num_classes,
                       emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth, bases=bases).to(device)
+    elif model_name == 'lgcn_rel_emb':
+        model = LGCN_REL_EMB(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
+                             num_classes=data.num_classes,
+                             emb_dim=emb_dim, rp=rp).to(device)
     else:
         raise ValueError(f'Unknown model name: {model_name}')
 
@@ -204,7 +208,10 @@ def objective_lgcn(trial):
 if __name__ == '__main__':
     model_to_run = 'lgcn'
     # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
+
     # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
+
+    # 'lgcn_rel_emb', 'lgcn_rel_emb_best'
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -231,15 +238,17 @@ if __name__ == '__main__':
            prune=True, optimizer='adam',
            final=False, emb_dim=1236, weights_size=49, bases=29, printnorms=None)
 
-
-
     elif model_to_run == 'lgcn':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
            final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
 
 
-
+    elif model_to_run == 'lgcn_rel_emb':
+        # LGCN with relation embeddings
+        go(model_name='lgcn_rel_emb', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None,
+           printnorms=None)
 
     elif model_to_run == 'rgcn_optuna':
         # Optuna rgcn
