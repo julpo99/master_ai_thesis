@@ -355,6 +355,7 @@ class LGCN(nn.Module):
         # triples = enrich(triples, num_nodes, num_rels)
         #
         # print(f'Triples enriched in {kg.toc():.2}s')
+        # r = num_rels * 2 + 1  # number of relations (including inverses and self-loops)
 
         r = num_rels
 
