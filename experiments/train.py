@@ -189,7 +189,7 @@ def objective_lgcn(trial):
     optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
     emb_dim = trial.suggest_int('emb_dim', 4, 128)
     rp = trial.suggest_int('rp', 1, 16)
-    ldepth = trial.suggest_int('ldepth', 1, 8)
+    ldepth = trial.suggest_int('ldepth', 1, 4)
     lwidth = trial.suggest_int('lwidth', 16, 256)
     bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
 
@@ -241,7 +241,7 @@ if __name__ == '__main__':
     elif model_to_run == 'lgcn':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None, printnorms=None)
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, bases=None, printnorms=None)
 
 
     elif model_to_run == 'lgcn_rel_emb':
