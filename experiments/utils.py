@@ -186,7 +186,7 @@ def batchmm(
     return result.view(B, height, D)
 
 
-class SparseMMFunction(torch.autograd.Function):
+class SparseMMCPU(torch.autograd.Function):
     """
     Sparse matrix multiplication with autograd support for sparse values and xmatrix.
 
@@ -205,7 +205,7 @@ class SparseMMFunction(torch.autograd.Function):
         Forward pass: Computes Y = A @ X where A is a sparse matrix defined by (indices, values, size).
         """
         assert indices.shape[0] == 2, "Indices must be of shape (2, nnz)"
-        A = torch.sparse_coo_tensor(indices, values, size, device=values.device)
+        A = torch.sparse_coo_tensor(indices, values, size, device='cpu')
         A = A.coalesce()  # Ensure no duplicate indices
 
         ctx.save_for_backward(indices, values, xmatrix)
@@ -233,7 +233,61 @@ class SparseMMFunction(torch.autograd.Function):
         grad_values = (grad_output_select * xmatrix_select).sum(dim=1)
 
         # dL/dX = Aᵗ @ dL/dY
-        A = torch.sparse_coo_tensor(indices, values, (rows, cols), device=values.device).coalesce()
+        A = torch.sparse_coo_tensor(indices, values, (rows, cols), device='cpu').coalesce()
+        grad_xmatrix = torch.sparse.mm(A.transpose(0, 1), grad_output)
+
+        return None, grad_values, None, grad_xmatrix
+
+
+class SparseMMGPU(torch.autograd.Function):
+    """
+    Sparse matrix multiplication with autograd support for sparse values and xmatrix.
+
+    NOTE: This implementation assumes the sparse matrix is given in COO format (indices, values).
+    """
+
+    @staticmethod
+    def forward(
+            ctx,
+            indices: Tensor,
+            values: Tensor,
+            size: Tuple[int, int],
+            xmatrix: Tensor
+    ) -> Tensor:
+        """
+        Forward pass: Computes Y = A @ X where A is a sparse matrix defined by (indices, values, size).
+        """
+        assert indices.shape[0] == 2, "Indices must be of shape (2, nnz)"
+        A = torch.sparse_coo_tensor(indices, values, size, device='cuda')
+        A = A.coalesce()  # Ensure no duplicate indices
+
+        ctx.save_for_backward(indices, values, xmatrix)
+        ctx.shape = size
+
+        return torch.sparse.mm(A, xmatrix)
+
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> Tuple[None, Tensor, None, Tensor]:
+        """
+        Backward pass for sparse values and dense xmatrix.
+
+        Returns:
+            (grad_indices=None, grad_values, grad_size=None, grad_xmatrix)
+        """
+        print(f'ctx.saved_tensors: {ctx.saved_tensors}')
+        indices, values, xmatrix = ctx.saved_tensors
+        rows, cols = ctx.shape
+
+        i = indices[0, :]
+        j = indices[1, :]
+
+        # dL/dvalues = sum over D dims of (dL/dY[i] * X[j])
+        grad_output_select = grad_output[i]  # shape: (nnz, D)
+        xmatrix_select = xmatrix[j]  # shape: (nnz, D)
+        grad_values = (grad_output_select * xmatrix_select).sum(dim=1)
+
+        # dL/dX = Aᵗ @ dL/dY
+        A = torch.sparse_coo_tensor(indices, values, (rows, cols), device='cuda').coalesce()
         grad_xmatrix = torch.sparse.mm(A.transpose(0, 1), grad_output)
 
         return None, grad_values, None, grad_xmatrix
@@ -262,7 +316,13 @@ def spmm(
 
     if indices.shape[0] != 2:
         indices = indices.t()
-    return SparseMMFunction.apply(indices, values, size, xmatrix)
+
+    if indices.is_cuda:
+        print("Using GPU for sparse matrix multiplication")
+        return SparseMMGPU.apply(indices, values, size, xmatrix)
+    else:
+        print("Using CPU for sparse matrix multiplication")
+        return SparseMMCPU.apply(indices, values, size, xmatrix)
 
 
 def adj(
