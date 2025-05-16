@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lgcn              # Job name
+#SBATCH --job-name=lgcn               # Job name
 #SBATCH --time=00:15:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
