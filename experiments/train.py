@@ -40,7 +40,7 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
     elif model_name == 'lgcn':
         model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                       num_classes=data.num_classes,
-                      emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth, bases=bases).to(device)
+                      emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth).to(device)
     elif model_name == 'lgcn_rel_emb':
         model = LGCN_REL_EMB(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                              num_classes=data.num_classes,
@@ -206,7 +206,7 @@ def objective_lgcn(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn'
+    model_to_run = 'lgcn_rel_emb'
     # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
 
     # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
@@ -241,7 +241,7 @@ if __name__ == '__main__':
     elif model_to_run == 'lgcn':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, bases=None, printnorms=None)
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, printnorms=None)
 
 
     elif model_to_run == 'lgcn_rel_emb':
