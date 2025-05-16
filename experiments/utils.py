@@ -204,7 +204,6 @@ class SparseMMCPU(torch.autograd.Function):
         """
         Forward pass: Computes Y = A @ X where A is a sparse matrix defined by (indices, values, size).
         """
-        print(f'Using CPU for sparse matrix multiplication (forward)')
         assert indices.shape[0] == 2, "Indices must be of shape (2, nnz)"
         A = torch.sparse_coo_tensor(indices, values, size, device='cpu')
         A = A.coalesce()  # Ensure no duplicate indices
@@ -222,7 +221,6 @@ class SparseMMCPU(torch.autograd.Function):
         Returns:
             (grad_indices=None, grad_values, grad_size=None, grad_xmatrix)
         """
-        print(f'Using CPU for sparse matrix multiplication (backward)')
         indices, values, xmatrix = ctx.saved_tensors
         rows, cols = ctx.shape
 
@@ -259,7 +257,6 @@ class SparseMMGPU(torch.autograd.Function):
         """
         Forward pass: Computes Y = A @ X where A is a sparse matrix defined by (indices, values, size).
         """
-        print(f'Using GPU for sparse matrix multiplication (forward)')
         assert indices.shape[0] == 2, "Indices must be of shape (2, nnz)"
         A = torch.sparse_coo_tensor(indices, values, size, device='cuda')
         A = A.coalesce()  # Ensure no duplicate indices
@@ -277,8 +274,6 @@ class SparseMMGPU(torch.autograd.Function):
         Returns:
             (grad_indices=None, grad_values, grad_size=None, grad_xmatrix)
         """
-        print(f'Using GPU for sparse matrix multiplication (backward)')
-        print(f'ctx.saved_tensors: {ctx.saved_tensors}')
         indices, values, xmatrix = ctx.saved_tensors
         rows, cols = ctx.shape
 
@@ -322,10 +317,8 @@ def spmm(
         indices = indices.t()
 
     if indices.is_cuda:
-        print("Using GPU for sparse matrix multiplication")
         return SparseMMGPU.apply(indices, values, size, xmatrix)
     else:
-        print("Using CPU for sparse matrix multiplication")
         return SparseMMCPU.apply(indices, values, size, xmatrix)
 
 
