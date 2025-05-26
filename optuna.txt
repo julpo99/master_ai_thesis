@@ -10,3 +10,4 @@ RGCN_EMB best parameters
 
 
 LGCN best parameters
+0.6706 and parameters: {'lr': 0.07320573479805594, 'wd': 1.3296628687447213e-05, 'l2': 1.7505261411140035e-06, 'epochs': 80, 'emb_dim': 68, 'rp': 7, 'lwidth': 157, 'bases': 38}. Best is trial 19 with value: 0.6706.
