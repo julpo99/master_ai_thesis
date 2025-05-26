@@ -182,15 +182,17 @@ def objective_rgcn_emb(trial):
 
 
 def objective_lgcn(trial):
-    lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
-    wd = trial.suggest_float('wd', 0.00001, 0.1, log=True)
-    l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
-    epochs = trial.suggest_int('epochs', 30, 200)
-    optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
-    emb_dim = trial.suggest_int('emb_dim', 4, 128)
+    lr = trial.suggest_float('lr', 0.01, 0.1, log=True)
+    wd = trial.suggest_float('wd', 0.00001, 0.0001, log=True)
+    l2 = trial.suggest_float('l2', 0.000001, 0.0001, log=True)
+    epochs = trial.suggest_int('epochs', 60, 150)
+    # optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
+    optimizer = 'adam'
+    emb_dim = trial.suggest_int('emb_dim', 64, 128)
     rp = trial.suggest_int('rp', 1, 16)
-    ldepth = trial.suggest_int('ldepth', 1, 4)
-    lwidth = trial.suggest_int('lwidth', 16, 256)
+    # ldepth = trial.suggest_int('ldepth', 1, 4)
+    ldepth = 1
+    lwidth = trial.suggest_int('lwidth', 128, 256)
     bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
 
     config = dict(trial.params)
@@ -206,7 +208,7 @@ def objective_lgcn(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_rel_emb'
+    model_to_run = 'lgcn_optuna'
     # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
 
     # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
@@ -241,7 +243,12 @@ if __name__ == '__main__':
     elif model_to_run == 'lgcn':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, printnorms=None)
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, bases=None, printnorms=None)
+    elif model_to_run == 'lgcn_best':
+        # LGCN Best (optuna)
+        go(model_name='lgcn', name='amplus', lr=0.07853833444430745, wd=1.964167180340962e-05, l2=1.3917838028734193e-05,
+              epochs=90, prune=True, optimizer='adam',
+              final=False, emb_dim=80, weights_size=None, rp=12, ldepth=1, lwidth=125, bases=None, printnorms=None)
 
 
     elif model_to_run == 'lgcn_rel_emb':
