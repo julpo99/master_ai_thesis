@@ -193,8 +193,8 @@ def objective_lgcn(trial):
     # ldepth = trial.suggest_int('ldepth', 1, 4)
     ldepth = 1
     lwidth = trial.suggest_int('lwidth', 128, 256)
-    bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
-
+    # bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
+    bases = None
     config = dict(trial.params)
     config['trial.number'] = trial.number
     wandb.init(project='lgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
@@ -208,7 +208,7 @@ def objective_lgcn(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_optuna'
+    model_to_run = 'lgcn_best'
     # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
 
     # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
@@ -244,11 +244,12 @@ if __name__ == '__main__':
         # LGCN
         go(model_name='lgcn', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
            final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, bases=None, printnorms=None)
+
     elif model_to_run == 'lgcn_best':
         # LGCN Best (optuna)
-        go(model_name='lgcn', name='amplus', lr=0.07853833444430745, wd=1.964167180340962e-05, l2=1.3917838028734193e-05,
-              epochs=90, prune=True, optimizer='adam',
-              final=False, emb_dim=80, weights_size=None, rp=12, ldepth=1, lwidth=125, bases=None, printnorms=None)
+        go(model_name='lgcn', name='amplus', lr=0.07320573479805594, wd=1.3296628687447213e-05, l2=1.7505261411140035e-06,
+           epochs=80, prune=True, optimizer='adam', final=False, emb_dim=68, rp=7, ldepth=1, lwidth=157, bases=None,
+           printnorms=True)
 
 
     elif model_to_run == 'lgcn_rel_emb':
