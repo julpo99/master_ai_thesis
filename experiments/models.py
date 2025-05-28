@@ -540,12 +540,26 @@ class LGCN_REL_EMB(nn.Module):
         # Create a mapping from (subject, object) to index
         pair_to_index = {tuple(pair.tolist()): idx for idx, pair in enumerate(unique_pairs)}
 
-        # Construct the binary relation matrix (nt x num_rels)
-        relation_matrix = torch.zeros(nt, num_rels)
-        for idx, (s, r, o) in enumerate(triples.tolist()):
+        # Construct the binary relation matrix (nt x num_rels) (Old dense matrix approach)
+        # relation_matrix = torch.zeros(nt, num_rels)
+        # for idx, (s, r, o) in enumerate(triples.tolist()):
+        #     pair_idx = pair_to_index[(s, o)]
+        #     relation_matrix[pair_idx, r] = 1.0
+        # self.register_buffer('relation_matrix_old', relation_matrix)
+
+        # New sparse matrix approach
+        row_indices = []
+        col_indices = []
+
+        for s, r, o in triples.tolist():
             pair_idx = pair_to_index[(s, o)]
-            relation_matrix[pair_idx, r] = 1.0
-        self.register_buffer('relation_matrix', relation_matrix)
+            row_indices.append(pair_idx)
+            col_indices.append(r)
+
+        indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
+        values = torch.ones(len(row_indices), dtype=torch.float)
+        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(nt, num_rels))
+        self.register_buffer('relation_matrix', relation_matrix.coalesce())
 
         # Define learnable relation embeddings (num_rels x rp)
         self.relation_embeddings = nn.Parameter(torch.randn(num_rels, rp))
@@ -581,7 +595,8 @@ class LGCN_REL_EMB(nn.Module):
         rp, r, n, nt = self.rp, self.num_rels, self.num_nodes, self.nt
 
         # Compute latent representations for each node pair
-        latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp)
+        # latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp) (Old dense matrix approach)
+        latents = torch.sparse.mm(self.relation_matrix, self.relation_embeddings)
         latents = torch.softmax(latents, dim=1)  # Normalize across relations
         latents_flat = latents.t().reshape(-1)  # Shape: (nt * rp,)
 
