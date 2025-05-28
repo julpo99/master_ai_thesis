@@ -208,7 +208,7 @@ def objective_lgcn(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_best'
+    model_to_run = 'lgcn_rel_emb'
     # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
 
     # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
@@ -254,7 +254,7 @@ if __name__ == '__main__':
         go(model_name='lgcn', name='amplus', lr=0.07701033556395322, wd=1.1526624901200162e-05,
            l2=2.4205143915686227e-06, epochs=200, prune=True, optimizer='adam',
            final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=256, bases=None,
-           printnorms=10)
+           printnorms=None)
 
 
     elif model_to_run == 'lgcn_rel_emb':
