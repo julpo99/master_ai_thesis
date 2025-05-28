@@ -122,7 +122,7 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
 
                 for r in range(nr):
                     ctr[data.i2r[r]] = weights[r].norm().item()
-                    ctr['inv_' + data.i2r[r]] = weights[r + nr].norm().item()  # Handle inverse relations
+                    #ctr['inv_' + data.i2r[r]] = weights[r + nr].norm().item()  # Handle inverse relations
 
                 print(f'Relations with largest weight norms in layer {layer_num}.')
                 for rel, w in ctr.most_common(printnorms):
@@ -247,9 +247,14 @@ if __name__ == '__main__':
 
     elif model_to_run == 'lgcn_best':
         # LGCN Best (optuna)
-        go(model_name='lgcn', name='amplus', lr=0.07320573479805594, wd=1.3296628687447213e-05, l2=1.7505261411140035e-06,
-           epochs=80, prune=True, optimizer='adam', final=False, emb_dim=68, rp=7, ldepth=1, lwidth=157, bases=None,
-           printnorms=True)
+        # go(model_name='lgcn', name='amplus', lr=0.07701033556395322, wd=1.1526624901200162e-05,
+        #    l2=2.4205143915686227e-06, epochs=132, prune=True, optimizer='adam',
+        #    final=False, emb_dim=120, weights_size=None, rp=10, ldepth=1, lwidth=240, bases=None,
+        #    printnorms=None)
+        go(model_name='lgcn', name='amplus', lr=0.07701033556395322, wd=1.1526624901200162e-05,
+           l2=2.4205143915686227e-06, epochs=200, prune=True, optimizer='adam',
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=256, bases=None,
+           printnorms=10)
 
 
     elif model_to_run == 'lgcn_rel_emb':
