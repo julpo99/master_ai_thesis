@@ -207,9 +207,31 @@ def objective_lgcn(trial):
 
     return withheld_acc
 
+def objective_lgcn_rel_emb(trial):
+    lr = trial.suggest_float('lr', 0.001, 0.1, log=True)
+    wd = trial.suggest_float('wd', 0.00001, 0.01, log=True)
+    l2 = trial.suggest_float('l2', 0.00001, 0.001, log=True)
+    epochs = trial.suggest_int('epochs', 60, 200)
+    # optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
+    optimizer = 'adam'
+    emb_dim = trial.suggest_int('emb_dim', 64, 128)
+    rp = trial.suggest_int('rp', 1, 12)
+    # bases = trial.suggest_categorical('bases', [None] + list(range(1, 51)))
+    bases = None
+    config = dict(trial.params)
+    config['trial.number'] = trial.number
+    wandb.init(project='lgcn_rel_emb_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config,
+               reinit='default')
+
+    withheld_acc = go(model_name='lgcn_rel_emb', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
+                      optimizer=optimizer, final=False, emb_dim=emb_dim, rp=rp, bases=bases,
+                      printnorms=None, trial=trial, wandb=wandb)
+
+    return withheld_acc
+
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_rel_emb_best'
+    model_to_run = 'lgcn_rel_emb_optuna'
     # 'rgcn', 'rgcn_best',
     # 'rgcn_emb', 'rgcn_emb_best',
     # 'lgcn', 'lgcn_best',
@@ -304,6 +326,17 @@ if __name__ == '__main__':
             study_name='lgcn_optuna',
         )
         study.optimize(objective_lgcn, n_trials=10000)
+        print('Best trial:')
+        trial = study.best_trial
+        print(trial)
+
+    elif model_to_run == 'lgcn_rel_emb_optuna':
+        # Optuna lgcn_rel_emb
+        study = optuna.create_study(
+            direction='maximize',
+            study_name='lgcn_rel_emb_optuna',
+        )
+        study.optimize(objective_lgcn_rel_emb, n_trials=10000)
         print('Best trial:')
         trial = study.best_trial
         print(trial)
