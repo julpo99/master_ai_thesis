@@ -35,12 +35,12 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
                      emb_dim=emb_dim, bases=bases).to(device)
     elif model_name == 'rgcn_emb':
         model = RGCN_EMB(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
-                     num_classes=data.num_classes,
-                     emb_dim=emb_dim, weights_size=weights_size, bases=bases).to(device)
+                         num_classes=data.num_classes,
+                         emb_dim=emb_dim, weights_size=weights_size, bases=bases).to(device)
     elif model_name == 'lgcn':
         model = LGCN(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
-                      num_classes=data.num_classes,
-                      emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth).to(device)
+                     num_classes=data.num_classes,
+                     emb_dim=emb_dim, rp=rp, ldepth=ldepth, lwidth=lwidth).to(device)
     elif model_name == 'lgcn_rel_emb':
         model = LGCN_REL_EMB(data.triples, num_nodes=data.num_entities, num_rels=data.num_relations,
                              num_classes=data.num_classes,
@@ -106,7 +106,6 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
                 # Log metrics to wandb
                 wandb.log(data={'loss': loss.item(), 'train_acc': training_acc, 'withheld_acc': withheld_acc}, step=e)
 
-
         # Print epoch statistics
         print(
             f'Epoch {e:02}: \t\t loss {loss:.4f}, \t\t train acc {training_acc:.2f}, \t\t withheld acc'
@@ -122,7 +121,7 @@ def go(model_name, name, lr, wd, l2, epochs, prune, optimizer, final, emb_dim, w
 
                 for r in range(nr):
                     ctr[data.i2r[r]] = weights[r].norm().item()
-                    #ctr['inv_' + data.i2r[r]] = weights[r + nr].norm().item()  # Handle inverse relations
+                    # ctr['inv_' + data.i2r[r]] = weights[r + nr].norm().item()  # Handle inverse relations
 
                 print(f'Relations with largest weight norms in layer {layer_num}.')
                 for rel, w in ctr.most_common(printnorms):
@@ -155,7 +154,8 @@ def objective_rgcn(trial):
     wandb.init(project='rgcn_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
 
     withheld_acc = go(model_name='rgcn', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
-                      optimizer=optimizer, final=False, emb_dim=emb_dim, bases=bases, printnorms=None, trial=trial, wandb=wandb)
+                      optimizer=optimizer, final=False, emb_dim=emb_dim, bases=bases, printnorms=None, trial=trial,
+                      wandb=wandb)
 
     return withheld_acc
 
@@ -172,7 +172,8 @@ def objective_rgcn_emb(trial):
 
     config = dict(trial.params)
     config['trial.number'] = trial.number
-    wandb.init(project='rgcn_emb_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config, reinit='default')
+    wandb.init(project='rgcn_emb_optuna', entity='julpo99-vrije-universiteit-amsterdam', config=config,
+               reinit='default')
 
     withheld_acc = go(model_name='rgcn_emb', name='amplus', lr=lr, wd=wd, l2=l2, epochs=epochs, prune=True,
                       optimizer=optimizer, final=False, emb_dim=emb_dim, weights_size=weights_size, bases=bases,
@@ -208,12 +209,13 @@ def objective_lgcn(trial):
 
 
 if __name__ == '__main__':
-    model_to_run = 'lgcn_rel_emb'
-    # 'rgcn', 'rgcn_best', 'rgcn_emb', 'rgcn_emb_best', 'lgcn', 'lgcn_best'
-
-    # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna'
-
+    model_to_run = 'lgcn_rel_emb_best'
+    # 'rgcn', 'rgcn_best',
+    # 'rgcn_emb', 'rgcn_emb_best',
+    # 'lgcn', 'lgcn_best',
     # 'lgcn_rel_emb', 'lgcn_rel_emb_best'
+
+    # 'rgcn_optuna', 'rgcn_emb_optuna', 'lgcn_optuna', 'lgcn_rel_emb_optuna',
 
     if model_to_run == 'rgcn':
         # RGCN
@@ -236,7 +238,8 @@ if __name__ == '__main__':
 
     elif model_to_run == 'rgcn_emb_best':
         # RGCN_EMB Best (optuna)
-        go(model_name='rgcn_emb', name='amplus', lr=0.0016366409775459736, wd=0.0005755564025828806, l2=4.854651125478105e-05, epochs=45,
+        go(model_name='rgcn_emb', name='amplus', lr=0.0016366409775459736, wd=0.0005755564025828806,
+           l2=4.854651125478105e-05, epochs=45,
            prune=True, optimizer='adam',
            final=False, emb_dim=1236, weights_size=49, bases=29, printnorms=None)
 
@@ -253,14 +256,22 @@ if __name__ == '__main__':
         #    printnorms=None)
         go(model_name='lgcn', name='amplus', lr=0.07701033556395322, wd=1.1526624901200162e-05,
            l2=2.4205143915686227e-06, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=256, bases=None,
+           final=False, emb_dim=128, weights_size=None, rp=10, ldepth=None, lwidth=256, bases=None,
            printnorms=None)
 
 
     elif model_to_run == 'lgcn_rel_emb':
         # LGCN with relation embeddings
         go(model_name='lgcn_rel_emb', name='amplus', lr=0.001, wd=0.0, l2=0.0, epochs=200, prune=True, optimizer='adam',
-           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=0, lwidth=128, bases=None,
+           final=False, emb_dim=128, weights_size=None, rp=16, ldepth=1, lwidth=128, bases=None,
+           printnorms=None)
+
+
+    elif model_to_run == 'lgcn_rel_emb_best':
+        # LGCN_REL_EMB Best (optuna)
+        go(model_name='lgcn_rel_emb', name='amplus', lr=0.07701033556395322, wd=1.1526624901200162e-05,
+           l2=2.4205143915686227e-06,
+           epochs=200, prune=True, optimizer='adam', final=False, emb_dim=128, weights_size=None, rp=10, bases=None,
            printnorms=None)
 
     elif model_to_run == 'rgcn_optuna':
