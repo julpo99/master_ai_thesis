@@ -524,6 +524,13 @@ class LGCN_REL_EMB(nn.Module):
         self.emb_dim = emb_dim
         self.rp = rp
 
+        # kg.tic()
+        #
+        # # Enrich triples with inverses and self-loops
+        # triples = enrich(triples, num_nodes, num_rels)
+        #
+        # print(f'Triples enriched in {kg.toc():.2}s')
+        # self.num_rels = self.num_rels * 2 + 1  # number of relations (including inverses and self-loops)
 
         # Extract unique (subject, object) pairs
         pairs = triples[:, [0, 2]]
@@ -554,6 +561,8 @@ class LGCN_REL_EMB(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
+        self.rp, self.r, self.num_nodes, self.nt = rp, num_rels, num_nodes, nt
+
         # Initialize weights for two layers
         self.weights1 = nn.Parameter(torch.empty(rp, num_nodes, emb_dim))
         self.weights2 = nn.Parameter(torch.empty(rp, emb_dim, num_classes))
@@ -570,6 +579,7 @@ class LGCN_REL_EMB(nn.Module):
         """
 
         rp, r, n, nt = self.rp, self.num_rels, self.num_nodes, self.nt
+
         # Compute latent representations for each node pair
         latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp)
         latents = torch.softmax(latents, dim=1)  # Normalize across relations
