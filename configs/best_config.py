@@ -45,5 +45,19 @@ BEST_CONFIG = {
         'emb_dim': 121,
         'rp': 2,
         'enrich_flag': True
+    },
+    # 0.64
+    'lgcn_rel_emb_2': {
+        'model_name': 'lgcn_rel_emb_2',
+        'lr': 0.0008137315782311167,
+        'wd': 4.6505484305796594e-05,
+        'l2': 7.745607054814684e-07,
+        'epochs': 300,
+        'optimizer': 'adam',
+        'emb_dim': 106,
+        'rp': 9,
+        'ldepth': 4,
+        'lwidth': 69,
+        'enrich_flag': True
     }
 }
