@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=lgcn               # Job name
-#SBATCH --time=00:15:00               # Time limit (hh:mm:ss)
+#SBATCH --time=24:00:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
 #SBATCH --constraint=A6000            # GPU type
@@ -50,6 +50,9 @@ echo $$
 mkdir o`echo $$`
 cd o`echo $$`
 
+# Enable memory fragmentation workaround
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTHONPATH=$SCRIPT_DIR
 
 #python <<EOF
 #import torch
