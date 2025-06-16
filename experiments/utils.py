@@ -369,26 +369,3 @@ def adj(
     assert indices[1].max() < size[1], f"Max index {indices[1].max()} exceeds matrix size {size[1]}"
 
     return indices.t().to(device), size
-
-# def intlist(
-#         tensor: Union[torch.Tensor,
-#         List[int],
-#         Tuple[int, ...]]
-# ) -> List[int]:
-#     """
-#     Converts a 1D tensor to a list of ints.
-#     If the input is already a list or tuple, it is returned unchanged.
-#
-#     Args:
-#         tensor (torch.Tensor | list | tuple): Input to be converted.
-#
-#     Returns:
-#         List[int]: List of ints with the same values as the input.
-#     """
-#     if isinstance(tensor, (list, tuple)):
-#         return list(tensor)
-#
-#     tensor = tensor.squeeze()
-#     assert tensor.ndim == 1, f"Expected 1D tensor after squeeze, got shape {tensor.shape}"
-#
-#     return [int(x) for x in tensor]
