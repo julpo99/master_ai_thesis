@@ -1,5 +1,5 @@
 import torch
-from models import RGCN, RGCN_EMB, LGCN, LGCN_REL_EMB, LGCN_REL_EMB_2
+from models import RGCN, RGCN_EMB, LGCN, LGCN_REL_EMB
 
 
 def build_model(config: dict, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int):
@@ -63,19 +63,6 @@ def build_model(config: dict, triples: torch.Tensor, num_nodes: int, num_rels: i
             num_classes=num_classes,
             emb_dim=config.get('emb_dim'),
             rp=config.get('rp'),
-            enrich_flag=config.get('enrich_flag')
-        )
-
-    elif model_name == 'lgcn_rel_emb_2':
-        model = LGCN_REL_EMB_2(
-            triples=triples,
-            num_nodes=num_nodes,
-            num_rels=num_rels,
-            num_classes=num_classes,
-            emb_dim=config.get('emb_dim'),
-            rp=config.get('rp'),
-            ldepth=config.get('ldepth'),
-            lwidth=config.get('lwidth'),
             enrich_flag=config.get('enrich_flag')
         )
 

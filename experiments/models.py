@@ -12,7 +12,7 @@ class RGCN(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 bases: int = None, enrich_flag = False):
+                 bases: int = None, enrich_flag=False):
         """
         Initialize the R-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -149,7 +149,7 @@ class RGCN_EMB(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 1600,
-                 weights_size: int = 16, bases: int = None, enrich_flag = False):
+                 weights_size: int = 16, bases: int = None, enrich_flag=False):
         """
         Initialize the L-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -335,7 +335,7 @@ class LGCN(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 rp=16, ldepth=0, lwidth=64, enrich_flag = False):
+                 rp=16, ldepth=0, lwidth=64, enrich_flag=False):
         """
         Initialize the L-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -358,7 +358,6 @@ class LGCN(nn.Module):
 
             print(f'Triples enriched in {kg.toc():.2}s')
             num_rels = num_rels * 2 + 1  # number of relations (including inverses and self-loops)
-
 
         # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
         pairs = triples[:, [0, 2]]
@@ -507,7 +506,7 @@ class LGCN_REL_EMB(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 rp=16, ldepth=1, lwidth=64, enrich_flag = False):
+                 rp=16, enrich_flag=False):
         """
         Initialize the LGCN model with relation embeddings.
 
@@ -526,7 +525,6 @@ class LGCN_REL_EMB(nn.Module):
         self.num_classes = num_classes
         self.emb_dim = emb_dim
         self.rp = rp
-
 
         if enrich_flag:
             kg.tic()
@@ -640,154 +638,3 @@ class LGCN_REL_EMB(nn.Module):
         """
         assert p == 2, "Only L2 penalty is supported."
         return self.weights1.pow(p).sum()
-
-
-class LGCN_REL_EMB_2(nn.Module):
-    """
-    Latent Graph Convolutional Network with explicit relation embeddings.
-    """
-
-    def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 rp=16, ldepth=1, lwidth=64, enrich_flag = False):
-        """
-        Initialize the LGCN model with relation embeddings.
-
-        Args:
-            triples (torch.Tensor): Tensor of shape (num_triples, 3) containing (subject, relation, object) triples.
-            num_nodes (int): Number of nodes/entities in the graph.
-            num_rels (int): Number of unique relations.
-            num_classes (int): Number of output classes.
-            emb_dim (int): Dimension of node embeddings.
-            rp (int): Relation projection dimension.
-        """
-        super().__init__()
-
-        self.num_nodes = num_nodes
-        self.num_rels = num_rels
-        self.num_classes = num_classes
-        self.emb_dim = emb_dim
-        self.rp = rp
-        self.ldepth = ldepth
-
-
-        if enrich_flag:
-            kg.tic()
-
-            # Enrich triples with inverses and self-loops
-            triples = enrich(triples, num_nodes, num_rels)
-
-            print(f'Triples enriched in {kg.toc():.2}s')
-            self.num_rels = self.num_rels * 2 + 1  # number of relations (including inverses and self-loops)
-
-        # Extract unique (subject, object) pairs
-        pairs = triples[:, [0, 2]]
-        unique_pairs, inverse_indices = torch.unique(pairs, dim=0, return_inverse=True)
-        nt = unique_pairs.size(0)  # Number of unique node pairs
-
-        # Create a mapping from (subject, object) to index
-        pair_to_index = {tuple(pair.tolist()): idx for idx, pair in enumerate(unique_pairs)}
-
-        # New sparse matrix approach
-        row_indices = []
-        col_indices = []
-
-        for s, r, o in triples.tolist():
-            pair_idx = pair_to_index[(s, o)]
-            row_indices.append(pair_idx)
-            col_indices.append(r)
-
-        indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
-        values = torch.ones(len(row_indices), dtype=torch.float)
-        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(nt, num_rels))
-        self.register_buffer('relation_matrix', relation_matrix.coalesce())
-
-        # Define learnable relation embeddings (num_rels x rp)
-        self.relation_embeddings = nn.Parameter(torch.randn(num_rels, rp))
-
-        # Stacked latent projection MLPs
-        self.latent_layers = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(rp, lwidth),
-                nn.ReLU(),
-                nn.Linear(lwidth, rp)
-            ) for _ in range(ldepth)
-        ])
-
-
-        # Compute indices for the horizontally and vertically stacked adjacency matrices.
-        # -- All edges have all relations, so we just take the indices above and repeat them a bunch of times
-        s, o = unique_pairs[:, 0][None, :], unique_pairs[:, 1][None, :]
-        rm = torch.arange(rp)[:, None]  # relation multiplier
-        se, oe = (s * rm).reshape(-1, 1), (o * rm).reshape(-1, 1)
-        # -- indices multiplied by relation
-        s, o = s.expand(rp, nt).reshape(-1, 1), o.expand(rp, nt).reshape(-1, 1)
-
-        self.register_buffer('hindices', torch.cat([s, oe], dim=1))
-        self.register_buffer('vindices', torch.cat([se, o], dim=1))
-
-        self.rp, self.r, self.num_nodes, self.nt = rp, num_rels, num_nodes, nt
-
-        # Initialize weights for two layers
-        self.weights1 = nn.Parameter(torch.empty(rp, num_nodes, emb_dim))
-        self.weights2 = nn.Parameter(torch.empty(rp, emb_dim, num_classes))
-        nn.init.xavier_uniform_(self.weights1, gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self.weights2, gain=nn.init.calculate_gain('relu'))
-
-        # Bias terms
-        self.bias1 = nn.Parameter(torch.zeros(emb_dim))
-        self.bias2 = nn.Parameter(torch.zeros(num_classes))
-
-    def forward(self):
-        """
-        Forward pass of the LGCN model.
-        """
-
-        rp, r, n, nt = self.rp, self.num_rels, self.num_nodes, self.nt
-
-        # Compute latent representations for each node pair
-        # latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp) (Old dense matrix approach)
-        latents = torch.sparse.mm(self.relation_matrix, self.relation_embeddings)
-        latents = torch.softmax(latents, dim=1)  # Normalize across relations
-
-        # Apply stacked latent layers
-        for layer in self.latent_layers:
-            latents = torch.softmax(layer(latents), dim=1)
-
-        latents_flat = latents.t().reshape(-1)  # Shape: (nt * rp,)
-
-        # Normalize latents for horizontal adjacency
-        latents_norm = latents_flat / sum_sparse(self.hindices, latents_flat,
-                                                 (n, n * rp), row=False)
-
-        # First layer: Apply weights and aggregate
-        e = self.emb_dim
-        c = self.num_classes
-
-        weights1_flat = self.weights1.view(rp * n, e)
-        h = spmm(self.hindices, latents_norm, (n, n * rp), weights1_flat)
-        h = F.relu(h + self.bias1)
-
-        # Normalize latents for vertical adjacency
-        latents_norm = latents_flat / sum_sparse(self.vindices, latents_flat,
-                                                 (n * rp, n), row=True)
-
-        # Second layer: Aggregate and apply weights
-        h = spmm(self.vindices, latents_norm, (n * rp, n), h)
-        h = h.view(rp, n, e)
-        h = torch.einsum('rhc,rnh->nc', self.weights2, h)
-
-        return h + self.bias2  # Output logits
-
-    def penalty(self, p=2):
-        """
-        Compute L2 penalty for regularization.
-
-        Args:
-            p (int): Norm degree (only supports L2 norm).
-
-        Returns:
-            torch.Tensor: L2 penalty.
-        """
-        assert p == 2, "Only L2 penalty is supported."
-        return self.weights1.pow(p).sum()
-
