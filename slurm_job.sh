@@ -3,7 +3,6 @@
 #SBATCH --time=24:00:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=defq              # Default partition
-#SBATCH --constraint=A6000            # GPU type
 #SBATCH --ntasks-per-node=1           # Number of tasks per node
 #SBATCH --gres=gpu:1                  # Number of GPU cores per task
 #SBATCH --output=output_%j.log        # Output log file (%j will be replaced with the job ID)
