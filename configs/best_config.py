@@ -1,4 +1,6 @@
 BEST_CONFIG = {
+
+    # 0.85
     'rgcn': {
         'model_name': 'rgcn',
         'lr': 0.05499010733725328,
@@ -10,54 +12,74 @@ BEST_CONFIG = {
         'bases': None,
         'enrich_flag': True
     },
+
+    # 0.81
     'rgcn_emb': {
         'model_name': 'rgcn_emb',
-        'lr': 0.0016366409775459736,
-        'wd': 0.0005755564025828806,
-        'l2': 4.854651125478105e-05,
-        'epochs': 45,
+        'lr': 0.0010013,
+        'wd': 0.00044336,
+        'l2': 0.000012801,
+        'epochs': 49,
         'optimizer': 'adam',
-        'emb_dim': 1236,
-        'weights_size': 49,
-        'bases': 29,
+        'emb_dim': 1333,
+        'weights_size': 125,
+        'bases': 17,
         'enrich_flag': True
     },
+
+    # 0.68 not enriched
+    # 'lgcn': {
+    #     'model_name': 'lgcn',
+    #     'lr': 0.07701,
+    #     'wd': 0.000011527,
+    #     'l2': 0.0000024205,
+    #     'epochs': 132,
+    #     'optimizer': 'adamw',
+    #     'emb_dim': 120,
+    #     'rp': 10,
+    #     'ldepth': 0,
+    #     'lwidth': 240,
+    #     'enrich_flag': False
+    # },
+
+    # 0.68
     'lgcn': {
         'model_name': 'lgcn',
-        'lr': 0.007098298759085652,
-        'wd': 0.0001928055417451552,
-        'l2': 0.0001700540299938808,
+        'lr': 0.0070983,
+        'wd': 0.00019281,
+        'l2': 0.00017005,
         'epochs': 157,
-        'optimizer': 'adamw',
+        'optimizer': 'adam',
         'emb_dim': 88,
         'rp': 5,
         'ldepth': 1,
         'lwidth': 142,
         'enrich_flag': True
     },
+
+    # # 0.64
+    # 'lgcn_rel_emb': {
+    #     'model_name': 'lgcn_rel_emb',
+    #     'lr': 0.0099831,
+    #     'wd': 0.00017015,
+    #     'l2': 0.000011562,
+    #     'epochs': 240,
+    #     'optimizer': 'adamw',
+    #     'emb_dim': 126,
+    #     'rp': 12,
+    #     'enrich_flag': False
+    # },
+
+    # 0.74
     'lgcn_rel_emb': {
-        'model_name': 'lgcn_rel_emb',
-        'lr': 0.029164628546417427,
-        'wd': 1.8972659752382112e-06,
-        'l2': 2.0660993991588798e-07,
-        'epochs': 384,
-        'optimizer': 'adam',
-        'emb_dim': 121,
-        'rp': 2,
-        'enrich_flag': True
-    },
-    # 0.64
-    'lgcn_rel_emb_2': {
-        'model_name': 'lgcn_rel_emb_2',
-        'lr': 0.0008137315782311167,
-        'wd': 4.6505484305796594e-05,
-        'l2': 7.745607054814684e-07,
-        'epochs': 300,
-        'optimizer': 'adam',
-        'emb_dim': 106,
-        'rp': 9,
-        'ldepth': 4,
-        'lwidth': 69,
-        'enrich_flag': True
-    }
+            'model_name': 'lgcn_rel_emb',
+            'lr': 0.029165,
+            'wd': 0.0000018973,
+            'l2': 2.0661e-7,
+            'epochs': 384,
+            'optimizer': 'adamw',
+            'emb_dim': 121,
+            'rp': 2,
+            'enrich_flag': False
+        },
 }
