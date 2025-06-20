@@ -335,7 +335,7 @@ class LGCN(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 rp=16, ldepth=0, lwidth=64, enrich_flag=False):
+                 rp=16, ldepth=0, lwidth=64, dropout=0.0, enrich_flag=False):
         """
         Initialize the L-GCN model
         :param triples (torch.Tensor): 2D tensor of triples
@@ -349,6 +349,7 @@ class LGCN(nn.Module):
 
         self.emb_dim = emb_dim
         self.num_classes = num_classes
+        self.dropout = nn.Dropout(p=dropout)
 
         if enrich_flag:
             kg.tic()
@@ -434,13 +435,14 @@ class LGCN(nn.Module):
         rp, r, n, nt = self.rp, self.r, self.num_nodes, self.nt
 
         latents1 = self.to_latent1(self.nhots)
+        latents1 = self.dropout(latents1)
         assert latents1.size() == (nt, rp)
         latents1 = torch.softmax(latents1, dim=1)
         latents1 = latents1.t().reshape(-1)
         assert latents1.size() == (nt * rp,)
 
         # column normalize
-        latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False)
+        latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False).clamp(min=1e-6)
 
         assert self.hindices.size(0) == latents1.size(0), f'{self.indices.size()} {latents1.size()}'
 
@@ -456,6 +458,7 @@ class LGCN(nn.Module):
         # h = torch.mm(hor_graph, )
 
         h = spmm(indices=self.hindices, values=latents1, size=(n, n * rp), xmatrix=weights.view(rp * n, e))
+        h = self.dropout(h)
         assert h.size() == (n, e)
 
         h = F.relu(h + self.bias1)
@@ -470,7 +473,7 @@ class LGCN(nn.Module):
         latents2 = LACT(latents2)
 
         # row normalize
-        latents2 = latents2 / sum_sparse(self.vindices, latents2, (n * rp, n), row=True)
+        latents2 = latents2 / sum_sparse(self.vindices, latents2, (n * rp, n), row=True).clamp(min=1e-6)
 
         # Multiply adjacencies by hidden
         # h = torch.mm(ver_graph, h) # sparse mm
@@ -489,7 +492,11 @@ class LGCN(nn.Module):
 
         assert h.size() == (n, c)
 
-        return h + self.bias2  # -- softmax is applied in the losssl
+        # return h + self.bias2  # -- softmax is applied in the loss
+        logits = h + self.bias2
+        if torch.isnan(logits).any():
+            print("NaN detected in logits!", logits.max().item(), logits.min().item())
+        return logits
 
     def penalty(self, p=2):
         """
@@ -506,7 +513,7 @@ class LGCN_REL_EMB(nn.Module):
     """
 
     def __init__(self, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int, emb_dim: int = 16,
-                 rp=16, enrich_flag=False):
+                 rp=16, dropout=0.0, enrich_flag=False):
         """
         Initialize the LGCN model with relation embeddings.
 
@@ -525,6 +532,7 @@ class LGCN_REL_EMB(nn.Module):
         self.num_classes = num_classes
         self.emb_dim = emb_dim
         self.rp = rp
+        self.dropout = nn.Dropout(p=dropout)
 
         if enrich_flag:
             kg.tic()
@@ -561,11 +569,11 @@ class LGCN_REL_EMB(nn.Module):
 
         indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
         values = torch.ones(len(row_indices), dtype=torch.float)
-        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(nt, num_rels))
+        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(nt, self.num_rels))
         self.register_buffer('relation_matrix', relation_matrix.coalesce())
 
         # Define learnable relation embeddings (num_rels x rp)
-        self.relation_embeddings = nn.Parameter(torch.randn(num_rels, rp))
+        self.relation_embeddings = nn.Parameter(torch.randn(self.num_rels, rp))
 
         # Compute indices for the horizontally and vertically stacked adjacency matrices.
         # -- All edges have all relations, so we just take the indices above and repeat them a bunch of times
@@ -578,7 +586,7 @@ class LGCN_REL_EMB(nn.Module):
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-        self.rp, self.r, self.num_nodes, self.nt = rp, num_rels, num_nodes, nt
+        self.rp, self.r, self.num_nodes, self.nt = rp, self.num_rels, num_nodes, nt
 
         # Initialize weights for two layers
         self.weights1 = nn.Parameter(torch.empty(rp, num_nodes, emb_dim))
@@ -615,6 +623,7 @@ class LGCN_REL_EMB(nn.Module):
         h = spmm(self.hindices, latents_norm, (n, n * rp), weights1_flat)
         h = F.relu(h + self.bias1)
 
+        h = self.dropout(h)
         # Normalize latents for vertical adjacency
         latents_norm = latents_flat / sum_sparse(self.vindices, latents_flat,
                                                  (n * rp, n), row=True)
