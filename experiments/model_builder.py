@@ -52,6 +52,7 @@ def build_model(config: dict, triples: torch.Tensor, num_nodes: int, num_rels: i
             rp=config.get('rp'),
             ldepth=config.get('ldepth'),
             lwidth=config.get('lwidth'),
+            dropout=config.get('dropout'),
             enrich_flag=config.get('enrich_flag')
         )
 
@@ -63,6 +64,7 @@ def build_model(config: dict, triples: torch.Tensor, num_nodes: int, num_rels: i
             num_classes=num_classes,
             emb_dim=config.get('emb_dim'),
             rp=config.get('rp'),
+            dropout=config.get('dropout'),
             enrich_flag=config.get('enrich_flag')
         )
 
