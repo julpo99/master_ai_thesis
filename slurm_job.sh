@@ -50,7 +50,7 @@ mkdir o`echo $$`
 cd o`echo $$`
 
 # Enable memory fragmentation workaround
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+#export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONPATH=$SCRIPT_DIR
 
 #python <<EOF
