@@ -23,28 +23,30 @@ OPTUNA_SEARCH_SPACE ={
     },
 
     'lgcn': {
-        'lr': ('float', 0.0001, 0.07, 'log'),
-        'wd': ('float', 0.0001, 0.003, 'log'),
-        'l2': ('float', 0.000001, 0.0003, 'log'),
-        'epochs': ('int', 90, 180),
-        'optimizer': ('categorical', ['adam']),  # fixed optimizer
-        'emb_dim': ('int', 8, 96),
-        'rp': ('int', 1, 14),
-        'ldepth': ('int', 1, 1),
-        'lwidth': ('int', 16, 156),
+        'lr': ('float', 0.0001, 0.01, 'log'),
+        'wd': ('float', 0.0001, 0.01, 'log'),
+        'l2': ('float', 0.00001, 0.01, 'log'),
+        'epochs': ('int', 150, 300),
+        'optimizer': ('categorical', ['adamw']),
+        'emb_dim': ('int', 8, 128),
+        'rp': ('int', 1, 32),
+        'ldepth': ('int', 0, 8),
+        'lwidth': ('int', 64, 512),
         'bases': ('categorical', [None]),
-        'enrich_flag': ('categorical', [True, False])
+        'dropout': ('float', 0.1, 0.5),
+        'enrich_flag': ('categorical', [False])
     },
 
     'lgcn_rel_emb': {
         'lr': ('float', 0.0001, 0.1, 'log'),
-        'wd': ('float', 0.000001, 0.1, 'log'),
-        'l2': ('float', 0.00001, 0.001, 'log'),
-        'epochs': ('int', 100, 400),
+        'wd': ('float', 0.000001, 1, 'log'),
+        'l2': ('float', 0.0000001, 0.01, 'log'),
+        'epochs': ('int', 30, 250),
         'optimizer': ('categorical', ['adam', 'adamw']),
-        'emb_dim': ('int', 16, 128),
-        'rp': ('int', 1, 12),
+        'emb_dim': ('int', 8, 128),
+        'rp': ('int', 1, 10),
         'bases': ('categorical', [None]),
-        'enrich_flag': ('categorical', [True, False])
+        'dropout': ('float', 0.0, 0.4),
+        'enrich_flag': ('categorical', [False])
     },
 }
