@@ -1,24 +1,42 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Preferred GPUs in order of priority
-GPU_LIST=("A6000" "A100" "A5000" "A4000" "A2")
-SELECTED_CONSTRAINT=""
+LOCAL="$(pwd)"
+REMOTE="snellius:~/master_ai_thesis/"
+SLURM_SCRIPT="run_job.sh"
+REMOTE_OUT="snellius:~/master_ai_thesis/outputs/"
+REMOTE_LOGS="snellius:~/master_ai_thesis/slurm-*.out"
 
-# Query SLURM for each GPU type
-for gpu in "${GPU_LIST[@]}"; do
-    if sinfo -N -o "%G %t" | grep -q "$gpu.*idle"; then
-        SELECTED_CONSTRAINT=$gpu
-        break
-    fi
+LOCAL_OUT="./outputs/"
+
+# Sync code to Snellius
+rsync -azP --delete \
+  --exclude='build' \
+  --exclude='.git/' \
+  --exclude='.idea/' \
+  --exclude='lgcn.egg-info/' \
+  "$LOCAL/" "$REMOTE"
+echo "Synced code to Snellius"
+
+# Submit job (non-blocking) and capture job ID
+JOB_ID=$(ssh snellius "cd ~/master_ai_thesis && sbatch $SLURM_SCRIPT" | awk '{print $4}')
+echo "Submitted job $JOB_ID"
+
+# Monitor job status
+while true; do
+  STATE=$(ssh snellius "squeue -j $JOB_ID -h -o %T")
+  if [[ -z "$STATE" ]]; then
+    echo "Job $JOB_ID completed"
+    break
+  else
+    echo "Job $JOB_ID status: $STATE"
+    sleep 1
+  fi
 done
 
-# Exit if no GPU found
-if [ -z "$SELECTED_CONSTRAINT" ]; then
-  echo "No available GPUs found from: ${GPU_LIST[*]}"
-  exit 1
-fi
+# Fetch output results
+echo "Fetching job outputs..."
+mkdir -p "$LOCAL_OUT"
+rsync -azP --delete "$REMOTE_OUT" "$LOCAL_OUT"
+rsync -azP --delete "$REMOTE_LOGS" "$LOCAL"
 
-echo "Selected GPU: $SELECTED_CONSTRAINT"
-
-# Submit job with selected constraint
-sbatch --constraint=$SELECTED_CONSTRAINT slurm_job.sh
+echo "Done. Outputs are in $LOCAL_OUT"
