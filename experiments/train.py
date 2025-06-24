@@ -65,7 +65,7 @@ def train(config, trial=None, wandb=None):
 
     model = build_model(config, data.triples, data.num_entities, data.num_relations, data.num_classes).to(device)
 
-    print(f'Model {config['model_name']} created in {kg.toc():.3}s\n')
+    print(f"Model {config['model_name']} created in {kg.toc():.3}s\n")
 
     # Move data to the same device as the model
     data.training = data.training.to(device)
