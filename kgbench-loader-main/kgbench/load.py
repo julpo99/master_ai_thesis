@@ -9,6 +9,7 @@ import pandas as pd
 import gzip, base64, io, sys, warnings, wget, os, random
 
 import torch
+import pickle
 
 """
 Data loading utilities
@@ -444,10 +445,17 @@ def load(name, final=False, torch=False, prune_dist=None, include_val=False):
                     if tries > 10:
                         raise
 
+        if os.path.exists(here(f'../datasets/{name}.pkl')):
+            print(f'loading {name} dataset from pickle file.')
+            tic()
+            data = pickle.load(open(here(f'../datasets/{name}.pkl'), 'rb'))
+            print(f'loaded data {name} from pickle file ({toc():.2}s).')
+        else:
+            tic()
+            data = Data(here(f'../datasets/{name}.tgz'), final=final, use_torch=torch, name=name, catval=include_val)
+            print(f'loaded data {name} ({toc():.4}s).')
+            pickle.dump(data, open(here(f'../datasets/{name}.pkl'), 'wb'))
 
-        tic()
-        data = Data(here(f'../datasets/{name}.tgz'), final=final, use_torch=torch, name=name, catval=include_val)
-        print(f'loaded data {name} ({toc():.4}s).')
 
     elif os.path.isfile(name):
 
@@ -456,12 +464,20 @@ def load(name, final=False, torch=False, prune_dist=None, include_val=False):
         print(f'loaded data {name} ({toc():.4}s).')
 
     else:
-        raise Exception(f'Argument {name} does refer to one of the included datasets and does not seem to be a file on the filesystem.')
+        raise Exception(
+            f'Argument {name} does refer to one of the included datasets and does not seem to be a file on the filesystem.')
 
     if prune_dist is not None:
-        tic()
-        data = prune(data, n=prune_dist)
-        print(f'pruned ({toc():.4}s).')
+        if os.path.exists(here(f'../datasets/{name}_pruned.pkl')):
+            print(f'loading {name} dataset_pruned from pickle file.')
+            tic()
+            data = pickle.load(open(here(f'../datasets/{name}_pruned.pkl'), 'rb'))
+            print(f'loaded dataset_pruned {name} from pickle file ({toc():.2}s).')
+        else:
+            tic()
+            data = prune(data, n=prune_dist)
+            print(f'pruned ({toc():.4}s).')
+            pickle.dump(data, open(here(f'../datasets/{name}_pruned.pkl'), 'wb'))
 
     return data
 
