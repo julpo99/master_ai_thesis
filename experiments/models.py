@@ -457,7 +457,7 @@ class LGCN(nn.Module):
         # Apply weights and sum over relations
         # h = torch.mm(hor_graph, )
 
-        h = spmm(indices=self.hindices, values=latents1, size=(n, n * rp), xmatrix=weights.view(rp * n, e))
+        h = spmm(indices=self.hindices, values=latents1, size=(n, n * rp), xmatrix=weights.view(n * rp, e))
         h = self.dropout(h)
         assert h.size() == (n, e)
 
@@ -621,6 +621,7 @@ class LGCN_REL_EMB(nn.Module):
 
         weights1_flat = self.weights1.view(rp * n, e)
         h = spmm(self.hindices, latents_norm, (n, n * rp), weights1_flat)
+        assert h.size() == (n, e)
         h = F.relu(h + self.bias1)
 
         h = self.dropout(h)
