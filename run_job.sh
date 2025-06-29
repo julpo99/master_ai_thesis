@@ -1,10 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=lgcn               # Job name
-#SBATCH --time=24:00:00               # Time limit (hh:mm:ss)
+#SBATCH --time=01:00:00               # Time limit (hh:mm:ss)
 #SBATCH -N 1                          # Number of nodes
 #SBATCH --partition=gpu_h100          # Default partition
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1           # Number of tasks per node
+#SBATCH --cpus-per-task=8             # Number of CPU cores per task
+#SBATCH --mem-per-cpu=4G              # Memory per CPU core
 #SBATCH --gres=gpu:1                  # Number of GPU cores per task
 
 
@@ -39,8 +41,6 @@ fi
 # Simple trick to create a unique directory for each run of the script
 JOBID=${SLURM_JOB_ID}
 echo $JOBID
-mkdir -p o-$JOBID
-cd o-$JOBID
 
 
 #python <<EOF
@@ -54,4 +54,4 @@ export PYTHONPATH="$HOME/master_ai_thesis:$PYTHONPATH"
 
 
 # Run the actual experiment
-python -u $TRAIN_SCRIPT > 'output.out'
+python -u $TRAIN_SCRIPT > ${JOBID}.out 2>&1
