@@ -1,5 +1,7 @@
+import random
 from typing import Tuple
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -369,3 +371,14 @@ def adj(
     assert indices[1].max() < size[1], f"Max index {indices[1].max()} exceeds matrix size {size[1]}"
 
     return indices.t().to(device), size
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # for multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
