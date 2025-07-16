@@ -1,7 +1,6 @@
 import torch
 
-from experiments.models import RGCN, RGCN_EMB, LGCN, LGCN_REL_EMB
-from experiments.utils import set_seed
+from models import RGCN, RGCN_EMB, LGCN, LGCN_REL_EMB
 
 
 def build_model(config: dict, triples: torch.Tensor, num_nodes: int, num_rels: int, num_classes: int):
