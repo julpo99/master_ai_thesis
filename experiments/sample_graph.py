@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from configs.default_config import DEFAULT_CONFIG
-from experiments.model_builder import build_model
+from model_builder import build_model
 
 class EarlyStopping:
     def __init__(self, patience=20, mode='max', min_delta=0.0):
