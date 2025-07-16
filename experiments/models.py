@@ -1,8 +1,8 @@
-import kgbench as kg
 import torch
 import torch.nn.functional as F
 from torch import nn
 
+import kgbench as kg
 from experiments.utils import enrich, sum_sparse_rgcn, adj, sum_sparse, spmm
 
 
@@ -25,28 +25,27 @@ class RGCN(nn.Module):
 
         super().__init__()
 
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
+        self.num_classes = num_classes
         self.emb_dim = emb_dim
         self.bases = bases
-        self.num_classes = num_classes
 
-        if enrich_flag:
-            kg.tic()
-
-            # Enrich triples with inverses and self-loops
-            self.triples = enrich(triples, num_nodes, num_rels)
-
-            print(f'Triples enriched in {kg.toc():.2}s')
-
-            kg.tic()
+        # Enrich triples with inverses and self-loops
+        enrich_flag and kg.tic()
+        triples = enrich(triples, self.num_nodes, self.num_rels) if enrich_flag else triples
+        enrich_flag and print(f"Triples enriched in {kg.toc():.2f}s")
+        self.num_rels = self.num_rels * 2 + 1 if enrich_flag else self.num_rels
 
         # Compute adjacency matrices
-        hor_indices, hor_size = adj(self.triples, num_nodes, num_rels * 2 + 1, vertical=False)
-        ver_indices, ver_size = adj(self.triples, num_nodes, num_rels * 2 + 1, vertical=True)
+        kg.tic()
+        hor_indices, hor_size = adj(triples, self.num_nodes, self.num_rels, vertical=False)
+        ver_indices, ver_size = adj(triples, self.num_nodes, self.num_rels, vertical=True)
 
         print(f'Adjacency matrices computed in {kg.toc():.2}s')
 
-        _, rel_nodes = hor_size
-        num_rels = rel_nodes // num_nodes
+        _, self.rel_nodes = hor_size
+        self.num_rels = self.rel_nodes // self.num_nodes
 
         kg.tic()
 
@@ -64,13 +63,15 @@ class RGCN(nn.Module):
         print(f'Sparse tensors created in {kg.toc():.3}s')
 
         # Initialize weight matrices
-        self.weights1, self.bases1 = self._init_layer(num_rels, num_nodes, emb_dim, bases)  # First transformation layer
-        self.weights2, self.bases2 = self._init_layer(num_rels, emb_dim, num_classes,
-                                                      bases)  # Second transformation layer
+        self.weights1, self.bases1 = self._init_layer(self.num_rels, self.num_nodes, self.emb_dim,
+                                                      self.bases)  # First transformation layer
+        self.weights2, self.bases2 = self._init_layer(self.num_rels, self.emb_dim, self.num_classes,
+                                                      self.bases)  # Second transformation layer
 
         # Initialize biases
-        self.bias1 = nn.Parameter(torch.zeros(emb_dim))
-        self.bias2 = nn.Parameter(torch.zeros(num_classes))
+        self.bias1 = nn.Parameter(torch.zeros(self.emb_dim))
+        self.bias2 = nn.Parameter(torch.zeros(self.num_classes))
+
 
     def _init_layer(self, num_rels, in_dim, out_dim, bases):
         """
@@ -91,43 +92,42 @@ class RGCN(nn.Module):
         """
         Forward pass of R-GCN
         """
+        r, n, e, c = self.num_rels, self.num_nodes, self.emb_dim, self.num_classes
 
-        ## Layer 1
+        n, rel_nodes = self.hor_graph.shape
+        r = rel_nodes // n
 
-        num_nodes, rel_nodes = self.hor_graph.shape
-        num_rels = rel_nodes // num_nodes
+        # Layer 1
 
         if self.bases1 is not None:
-            weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(num_rels, num_nodes,
-                                                                                         self.emb_dim)
+            weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(r, n, e)
         else:
             weights = self.weights1
 
-        assert weights.size() == (num_rels, num_nodes, self.emb_dim)
+        assert weights.size() == (r, n, e)
 
         # Apply weights and sum over relations
-        h = torch.matmul(self.hor_graph, weights.view(num_rels * num_nodes, self.emb_dim))
+        h = torch.matmul(self.hor_graph, weights.view(r * n, e))
 
-        assert h.size() == (num_nodes, self.emb_dim)
+        assert h.size() == (n, e)
 
         h = F.relu(h + self.bias1)
 
         # Layer 2
         h = torch.matmul(self.ver_graph, h)  # Sparse matrix multiplication
-        h = h.view(num_rels, num_nodes, self.emb_dim)  # New dimension for relations
+        h = h.view(r, n, e)  # New dimension for relations
 
         if self.bases2 is not None:
-            weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(num_rels, self.emb_dim,
-                                                                                         self.num_classes)
+            weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(r, e, c)
         else:
             weights = self.weights2
 
-        assert weights.size() == (num_rels, self.emb_dim, self.num_classes)
+        assert weights.size() == (r, e, c)
 
         # Apply weights and sum over relations
         h = torch.bmm(h, weights).sum(dim=0)
 
-        assert h.size() == (num_nodes, self.num_classes)
+        assert h.size() == (n, c)
 
         return h + self.bias2  # softmax is applied in the loss function
 
@@ -163,30 +163,28 @@ class RGCN_EMB(nn.Module):
 
         super().__init__()
 
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
+        self.num_classes = num_classes
         self.emb_dim = emb_dim
         self.weights_size = weights_size
         self.bases = bases
-        self.num_classes = num_classes
 
-        if enrich_flag:
-            kg.tic()
-
-            # Enrich triples with inverses and self-loops
-            self.triples = enrich(triples, num_nodes, num_rels)
-
-            print(f'Triples enriched in {kg.toc():.2}s')
-
-            kg.tic()
+        # Enrich triples with inverses and self-loops
+        enrich_flag and kg.tic()
+        triples = enrich(triples, self.num_nodes, self.num_rels) if enrich_flag else triples
+        enrich_flag and print(f"Triples enriched in {kg.toc():.2f}s")
+        self.num_rels = self.num_rels * 2 + 1 if enrich_flag else self.num_rels
 
         # Compute adjacency matrices
-        hor_indices, hor_size = adj(self.triples, num_nodes, num_rels * 2 + 1, vertical=False)
-        ver_indices, ver_size = adj(self.triples, num_nodes, num_rels * 2 + 1, vertical=True)
+        kg.tic()
+        hor_indices, hor_size = adj(triples, self.num_nodes, self.num_rels, vertical=False)
+        ver_indices, ver_size = adj(triples, self.num_nodes, self.num_rels, vertical=True)
 
         print(f'Adjacency matrices computed in {kg.toc():.2}s')
 
-        _, rel_nodes = hor_size
-        # rel_nodes, _ = ver_size
-        num_rels = rel_nodes // num_nodes
+        _, self.rel_nodes = hor_size
+        self.num_rels = self.rel_nodes // self.num_nodes
 
         kg.tic()
 
@@ -199,29 +197,27 @@ class RGCN_EMB(nn.Module):
         # Create sparse adjacency matrices
         self.register_buffer('hor_graph', torch.sparse_coo_tensor(hor_indices.T, values, size=hor_size,
                                                                   dtype=torch.float32))
-        # self.register_buffer('ver_graph', torch.sparse_coo_tensor(ver_indices.T, values, size=ver_size,
-        #                                                           dtype=torch.float32))
+        self.register_buffer('ver_graph', torch.sparse_coo_tensor(ver_indices.T, values, size=ver_size,
+                                                                  dtype=torch.float32))
+
         print(f'Sparse tensors created in {kg.toc():.3}s')
 
         kg.tic()
 
         # Trainable Node Embeddings
-        self.node_embeddings = nn.Parameter(torch.FloatTensor(num_nodes, emb_dim))  # Learnable embeddings for nodes
-        # Kaiming initialization for node embeddings
+        self.node_embeddings = nn.Parameter(torch.FloatTensor(self.num_nodes, self.emb_dim))  # Learnable embeddings
+        # for nodes
         nn.init.kaiming_normal_(self.node_embeddings, mode='fan_in')
-        # The initialisation below is faster but not as good in our experience
-        # nn.init.xavier_uniform_(self.node_embeddings)
 
         # Initialize weight matrices
-        self.weights1, self.bases1 = self._init_layer(num_rels, emb_dim, weights_size, bases)
-        self.weights2, self.bases2 = self._init_layer(num_rels, weights_size, num_classes, bases)
+        self.weights1, self.bases1 = self._init_layer(self.num_rels, self.emb_dim, self.weights_size, self.bases)
+        self.weights2, self.bases2 = self._init_layer(self.num_rels, self.weights_size, self.num_classes, self.bases)
 
         kg.tic()
         # Initialize biases
-        self.bias1 = nn.Parameter(torch.zeros(weights_size))
-        self.bias2 = nn.Parameter(torch.zeros(num_classes))
+        self.bias1 = nn.Parameter(torch.zeros(self.weights_size))
+        self.bias2 = nn.Parameter(torch.zeros(self.num_classes))
 
-        print(f'Weights initialized in {kg.toc():.3}s')
 
     def _init_layer(self, num_rels, in_dim, out_dim, bases):
         """
@@ -242,56 +238,56 @@ class RGCN_EMB(nn.Module):
         """
         Forward pass of L-GCN
         """
+        r, n, e, w, c = self.num_rels, self.num_nodes, self.emb_dim, self.weights_size, self.num_classes
 
-        num_nodes, rel_nodes = self.hor_graph.shape
-        num_rels = rel_nodes // num_nodes
+        n, rel_nodes = self.hor_graph.shape
+        r = rel_nodes // n
 
         # Layer 1 L-GCN
 
         if self.bases1 is not None:
-            weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(num_rels, self.emb_dim,
-                                                                                         self.weights_size)
-            assert weights.shape == (num_rels, self.emb_dim, self.weights_size)
+            weights = torch.matmul(self.weights1, self.bases1.view(self.bases, -1)).view(r, e, w)
+            assert weights.shape == (r, e, w)
 
             weights = torch.transpose(weights, 0, 1)
             weights = torch.transpose(weights, 1, 2)
 
-            assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
+            assert weights.shape == (e, w, r), f'weights.shape: {weights.shape}'
 
         else:
             weights = torch.transpose(self.weights1, 0, 1)
             weights = torch.transpose(weights, 1, 2)
 
-            assert weights.shape == (self.emb_dim, self.weights_size, num_rels), f'weights.shape: {weights.shape}'
+            assert weights.shape == (e, w, r), f'weights.shape: {weights.shape}'
 
-        assert self.node_embeddings.size() == (num_nodes, self.emb_dim)
+        assert self.node_embeddings.size() == (n, e)
 
-        assert weights.size() == (self.emb_dim, self.weights_size, num_rels)
+        assert weights.size() == (e, w, r)
 
         h = torch.einsum('ni,ior->rno', self.node_embeddings, weights)
 
-        assert h.size() == (num_rels, num_nodes, self.weights_size)
+        assert h.size() == (r, n, w)
 
-        h = torch.reshape(h, (num_rels * num_nodes, self.weights_size))
+        h = torch.reshape(h, (r * n, w))
 
-        assert h.size() == (num_rels * num_nodes, self.weights_size)
+        assert h.size() == (r * n, w)
 
-        assert self.hor_graph.size() == (num_nodes, num_rels * num_nodes)
+        assert self.hor_graph.size() == (n, r * n)
 
         h = torch.matmul(self.hor_graph, h)
 
-        assert h.size() == (num_nodes, self.weights_size)
+        assert h.size() == (n, w)
 
-        assert self.bias1.size() == (self.weights_size,)
+        assert self.bias1.size() == (w,)
 
         h = F.relu(h + self.bias1)
 
         # Layer 2 L-GCN
 
         if self.bases2 is not None:
-            weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(num_rels, self.weights_size,
-                                                                                         self.num_classes)
-            assert weights.shape == (num_rels, self.weights_size, self.num_classes)
+            weights = torch.matmul(self.weights2, self.bases2.view(self.bases, -1)).view(r, w,
+                                                                                         n)
+            assert weights.shape == (r, w, n)
 
             weights = torch.transpose(weights, 0, 1)
             weights = torch.transpose(weights, 1, 2)
@@ -300,23 +296,23 @@ class RGCN_EMB(nn.Module):
             weights = torch.transpose(self.weights2, 0, 1)
             weights = torch.transpose(weights, 1, 2)
 
-        assert weights.size() == (self.weights_size, self.num_classes, num_rels), f'weights.shape: {weights.shape}'
+        assert weights.size() == (w, n, r), f'weights.shape: {weights.shape}'
 
         h = torch.einsum('ni,icr->rnc', h, weights)
 
-        assert h.size() == (num_rels, num_nodes, self.num_classes)
+        assert h.size() == (r, n, n)
 
-        h = torch.reshape(h, (num_rels * num_nodes, self.num_classes))
+        h = torch.reshape(h, (r * n, n))
 
-        assert h.size() == (num_rels * num_nodes, self.num_classes)
+        assert h.size() == (r * n, n)
 
-        assert self.hor_graph.size() == (num_nodes, num_rels * num_nodes)
+        assert self.hor_graph.size() == (n, r * n)
 
         h = torch.matmul(self.hor_graph, h)
 
-        assert h.size() == (num_nodes, self.num_classes)
+        assert h.size() == (n, n)
 
-        assert self.bias2.size() == (self.num_classes,)
+        assert self.bias2.size() == (n,)
 
         return h + self.bias2  # softmax is applied in the loss function
 
@@ -347,50 +343,50 @@ class LGCN(nn.Module):
 
         super().__init__()
 
-        self.emb_dim = emb_dim
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
         self.num_classes = num_classes
+        self.emb_dim = emb_dim
+        self.rp = rp
         self.dropout = nn.Dropout(p=dropout)
 
-        if enrich_flag:
-            kg.tic()
+        # Enrich triples with inverses and self-loops
+        enrich_flag and kg.tic()
+        triples = enrich(triples, self.num_nodes, self.num_rels) if enrich_flag else triples
+        enrich_flag and print(f"Triples enriched in {kg.toc():.2f}s")
+        self.num_rels = self.num_rels * 2 + 1 if enrich_flag else self.num_rels
 
-            # Enrich triples with inverses and self-loops
-            triples = enrich(triples, num_nodes, num_rels)
-
-            print(f'Triples enriched in {kg.toc():.2}s')
-            num_rels = num_rels * 2 + 1  # number of relations (including inverses and self-loops)
-
-        # Compute the (non-relational) index pairs of connected edges, and a dense matrix of n-hot encodings of the relations
+        # 1. Extract unique (subject, object) pairs from triples
         pairs = triples[:, [0, 2]]
         unique_pairs, inverse_indices = torch.unique(pairs, dim=0, return_inverse=True)
-        nt = unique_pairs.size(0)  # Number of unique node pairs
+        self.nt = int(unique_pairs.size(0))  # Number of unique node pairs
 
-        # Create a mapping from (subject, object) to index
-        pair_to_index = {tuple(pair.tolist()): idx for idx, pair in enumerate(unique_pairs)}
+        # 2. Create the sparse (n-hot style) relation matrix: [nt, num_rels]
+        row_indices = inverse_indices  # shape (num_triples,)
+        col_indices = triples[:, 1]  # relation indices (num_triples,)
 
-        # Compute indices for the horizontally and vertically stacked adjacency matrices.
-        # -- All edges have all relations, so we just take the indices above and repeat them a bunch of times
+        indices = torch.stack([row_indices, col_indices], dim=0).long()  # shape (2, num_triples)
+        values = torch.ones(row_indices.size(0), dtype=torch.float)
+
+        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(self.nt, self.num_rels)).coalesce()
+        self.register_buffer('relation_matrix', relation_matrix)
+
+        # 3. Compute horizontally and vertically stacked indices for latent graph edges
         s, o = unique_pairs[:, 0][None, :], unique_pairs[:, 1][None, :]
-        rm = torch.arange(rp)[:, None]  # relation multiplier
+        rm = torch.arange(self.rp)[:, None]  # relation multiplier
         se, oe = (s * rm).reshape(-1, 1), (o * rm).reshape(-1, 1)
-        # -- indices multiplied by relation
-        s, o = s.expand(rp, nt).reshape(-1, 1), o.expand(rp, nt).reshape(-1, 1)
+        s, o = s.expand(self.rp, self.nt).reshape(-1, 1), o.expand(self.rp, self.nt).reshape(-1, 1)
 
         self.register_buffer('hindices', torch.cat([s, oe], dim=1))
         self.register_buffer('vindices', torch.cat([se, o], dim=1))
 
-        self.register_buffer('nhots', torch.zeros(nt, num_rels))
-        s, p, o = triples[:, 0], triples[:, 1], triples[:, 2]
-        rows = torch.tensor([pair_to_index[(int(s_), int(o_))] for s_, o_ in zip(s, o)])
-        self.nhots[rows, p] = 1
-
         # maps relations to latent relations (one per layer)
         if ldepth == 0:
-            to_latent1 = [nn.Linear(num_rels, rp)]
-            to_latent2 = [nn.Linear(num_rels, rp)]
+            to_latent1 = [nn.Linear(self.num_rels, self.rp)]
+            to_latent2 = [nn.Linear(self.num_rels, self.rp)]
         else:
-            to_latent1 = [nn.Linear(num_rels, lwidth)]
-            to_latent2 = [nn.Linear(num_rels, lwidth)]
+            to_latent1 = [nn.Linear(self.num_rels, lwidth)]
+            to_latent2 = [nn.Linear(self.num_rels, lwidth)]
             for _ in range(ldepth - 1):
                 to_latent1.append(nn.ReLU())
                 to_latent2.append(nn.ReLU())
@@ -401,30 +397,21 @@ class LGCN(nn.Module):
             to_latent1.append(nn.ReLU())
             to_latent2.append(nn.ReLU())
 
-            to_latent1.append(nn.Linear(lwidth, rp))
-            to_latent2.append(nn.Linear(lwidth, rp))
+            to_latent1.append(nn.Linear(lwidth, self.rp))
+            to_latent2.append(nn.Linear(lwidth, self.rp))
 
         self.to_latent1 = nn.Sequential(*to_latent1)
         self.to_latent2 = nn.Sequential(*to_latent2)
 
-        self.rp, self.r, self.num_nodes, self.nt = rp, num_rels, num_nodes, nt
+        # Initialize weights for two layers
+        self.weights1 = nn.Parameter(torch.empty(self.rp, self.num_nodes, self.emb_dim))
+        self.weights2 = nn.Parameter(torch.empty(self.rp, self.emb_dim, self.num_classes))
+        nn.init.xavier_uniform_(self.weights1, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.weights2, gain=nn.init.calculate_gain('relu'))
 
-        # layer 1 weights
-        self.weights1 = self._init_layer(rp, num_nodes, emb_dim)
-
-        # layer 2 weights
-        self.weights2 = self._init_layer(rp, emb_dim, num_classes)
-
-        self.bias1 = nn.Parameter(torch.FloatTensor(emb_dim).zero_())
-        self.bias2 = nn.Parameter(torch.FloatTensor(num_classes).zero_())
-
-    def _init_layer(self, rows, columns, layers):
-        """
-        Helper function to initialize weight layers
-        """
-        weights = nn.Parameter(torch.empty(rows, columns, layers))
-        nn.init.xavier_uniform_(weights, gain=nn.init.calculate_gain('relu'))
-        return weights
+        # Bias terms
+        self.bias1 = nn.Parameter(torch.zeros(emb_dim))
+        self.bias2 = nn.Parameter(torch.zeros(num_classes))
 
     def forward(self):
         """
@@ -432,17 +419,17 @@ class LGCN(nn.Module):
         """
         LACT = torch.relu
 
-        rp, r, n, nt = self.rp, self.r, self.num_nodes, self.nt
+        rp, r, n, nt = self.rp, self.num_rels, self.num_nodes, self.nt
 
-        latents1 = self.to_latent1(self.nhots)
+        latents1 = self.to_latent1(self.relation_matrix)
         latents1 = self.dropout(latents1)
         assert latents1.size() == (nt, rp)
-        latents1 = torch.softmax(latents1, dim=1)
+        # latents1 = torch.softmax(latents1, dim=1)
         latents1 = latents1.t().reshape(-1)
         assert latents1.size() == (nt * rp,)
 
         # column normalize
-        latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False).clamp(min=1e-6)
+        latents1 = latents1 / sum_sparse(self.hindices, latents1, (n, n * rp), row=False)
 
         assert self.hindices.size(0) == latents1.size(0), f'{self.indices.size()} {latents1.size()}'
 
@@ -453,6 +440,13 @@ class LGCN(nn.Module):
         weights = self.weights1
 
         assert weights.size() == (rp, n, e)
+
+        weights_flat = weights.view(rp * n, e)
+
+        # Check starts here
+        A_check = torch.sparse_coo_tensor(self.hindices.t(), latents1, size=(n, n * rp)).coalesce()
+        h_check = torch.sparse.mm(A_check, weights_flat)  # shape: (n, e)
+        # Check ends here
 
         # Apply weights and sum over relations
         # h = torch.mm(hor_graph, )
@@ -465,7 +459,7 @@ class LGCN(nn.Module):
 
         ## Layer 2
 
-        latents2 = self.to_latent2(self.nhots)
+        latents2 = self.to_latent2(self.relation_matrix)
         assert latents2.size() == (nt, rp)
         latents2 = torch.softmax(latents2, dim=1)
         latents2 = latents2.t().reshape(-1)
@@ -524,6 +518,8 @@ class LGCN_REL_EMB(nn.Module):
             num_classes (int): Number of output classes.
             emb_dim (int): Dimension of node embeddings.
             rp (int): Relation projection dimension.
+            dropout (float): Dropout probability.
+            enrich_flag (bool): If True, enrich the relation embeddings.
         """
         super().__init__()
 
@@ -534,63 +530,50 @@ class LGCN_REL_EMB(nn.Module):
         self.rp = rp
         self.dropout = nn.Dropout(p=dropout)
 
-        if enrich_flag:
-            kg.tic()
+        # Enrich triples with inverses and self-loops
+        enrich_flag and kg.tic()
+        triples = enrich(triples, self.num_nodes, self.num_rels) if enrich_flag else triples
+        enrich_flag and print(f"Triples enriched in {kg.toc():.2f}s")
+        self.num_rels = self.num_rels * 2 + 1 if enrich_flag else self.num_rels
 
-            # Enrich triples with inverses and self-loops
-            triples = enrich(triples, num_nodes, num_rels)
-
-            print(f'Triples enriched in {kg.toc():.2}s')
-            self.num_rels = self.num_rels * 2 + 1  # number of relations (including inverses and self-loops)
-
-        # Extract unique (subject, object) pairs
+        # 1. Extract unique (subject, object) pairs from triples
         pairs = triples[:, [0, 2]]
-        unique_pairs, inverse_indices = torch.unique(pairs, dim=0, return_inverse=True)
-        nt = unique_pairs.size(0)  # Number of unique node pairs
+        unique_pairs, inverse_indices = torch.unique_consecutive(pairs, dim=0,
+                                                                 return_inverse=True)  # unique_consecutive does not order the pairs, unique does
+        self.nt = int(unique_pairs.size(0))  # Number of unique node pairs
 
-        # Create a mapping from (subject, object) to index
-        pair_to_index = {tuple(pair.tolist()): idx for idx, pair in enumerate(unique_pairs)}
+        # 2. Create the sparse (n-hot style) relation matrix: [nt, num_rels]
+        row_indices = inverse_indices  # shape (num_triples,)
+        col_indices = triples[:, 1]  # relation indices (num_triples,)
 
-        # Construct the binary relation matrix (nt x num_rels) (Old dense matrix approach)
-        # relation_matrix = torch.zeros(nt, num_rels)
-        # for idx, (s, r, o) in enumerate(triples.tolist()):
-        #     pair_idx = pair_to_index[(s, o)]
-        #     relation_matrix[pair_idx, r] = 1.0
-        # self.register_buffer('relation_matrix_old', relation_matrix)
+        indices = torch.stack([row_indices, col_indices], dim=0).long()  # shape (2, num_triples)
+        values = torch.ones(row_indices.size(0), dtype=torch.float)
 
-        # New sparse matrix approach
-        row_indices = []
-        col_indices = []
+        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(self.nt, self.num_rels)).coalesce()
+        self.register_buffer('relation_matrix', relation_matrix)
 
-        for s, r, o in triples.tolist():
-            pair_idx = pair_to_index[(s, o)]
-            row_indices.append(pair_idx)
-            col_indices.append(r)
+        # 3. Compute horizontally and vertically stacked indices for latent graph edges
+        fr, to = unique_pairs[:, 0][None, :], unique_pairs[:, 1][None, :]
+        rm = torch.arange(self.rp)[:, None]  # relation multiplier
 
-        indices = torch.tensor([row_indices, col_indices], dtype=torch.long)
-        values = torch.ones(len(row_indices), dtype=torch.float)
-        relation_matrix = torch.sparse_coo_tensor(indices, values, size=(nt, self.num_rels))
-        self.register_buffer('relation_matrix', relation_matrix.coalesce())
+        # fr_offset = (fr * rm).reshape(-1, 1) # LGCN Style
+        # to_offset = (to * rm).reshape(-1, 1) # LGCN Style
+        fr_offset = (fr + rm * num_nodes).reshape(-1, 1)  # RGCN Style
+        to_offset = (to + rm * num_nodes).reshape(-1, 1)  # RGCN Style
 
-        # Define learnable relation embeddings (num_rels x rp)
-        self.relation_embeddings = nn.Parameter(torch.randn(self.num_rels, rp))
+        fr, to = fr.expand(self.rp, self.nt).reshape(-1, 1), to.expand(self.rp, self.nt).reshape(-1, 1)
 
-        # Compute indices for the horizontally and vertically stacked adjacency matrices.
-        # -- All edges have all relations, so we just take the indices above and repeat them a bunch of times
-        s, o = unique_pairs[:, 0][None, :], unique_pairs[:, 1][None, :]
-        rm = torch.arange(rp)[:, None]  # relation multiplier
-        se, oe = (s * rm).reshape(-1, 1), (o * rm).reshape(-1, 1)
-        # -- indices multiplied by relation
-        s, o = s.expand(rp, nt).reshape(-1, 1), o.expand(rp, nt).reshape(-1, 1)
+        self.register_buffer('hor_indices', torch.cat([fr, to_offset], dim=1))
+        self.register_buffer('ver_indices', torch.cat([fr_offset, to], dim=1))
 
-        self.register_buffer('hindices', torch.cat([s, oe], dim=1))
-        self.register_buffer('vindices', torch.cat([se, o], dim=1))
-
-        self.rp, self.r, self.num_nodes, self.nt = rp, self.num_rels, num_nodes, nt
+        # Relation embedding matrix is now an identity matrix, non-trainable
+        assert self.rp == self.num_rels, "To use identity relation embeddings, self.rp must equal self.num_rels"
+        identity = torch.eye(self.num_rels)
+        self.register_buffer('relation_embeddings', identity)
 
         # Initialize weights for two layers
-        self.weights1 = nn.Parameter(torch.empty(rp, num_nodes, emb_dim))
-        self.weights2 = nn.Parameter(torch.empty(rp, emb_dim, num_classes))
+        self.weights1 = nn.Parameter(torch.empty(self.rp, self.num_nodes, self.emb_dim))
+        self.weights2 = nn.Parameter(torch.empty(self.rp, self.emb_dim, self.num_classes))
         nn.init.xavier_uniform_(self.weights1, gain=nn.init.calculate_gain('relu'))
         nn.init.xavier_uniform_(self.weights2, gain=nn.init.calculate_gain('relu'))
 
@@ -603,36 +586,48 @@ class LGCN_REL_EMB(nn.Module):
         Forward pass of the LGCN model.
         """
 
-        rp, r, n, nt = self.rp, self.num_rels, self.num_nodes, self.nt
+        rp, r, n, nt, e, c = self.rp, self.num_rels, self.num_nodes, self.nt, self.emb_dim, self.num_classes
 
         # Compute latent representations for each node pair
         # latents = self.relation_matrix @ self.relation_embeddings  # Shape: (nt, rp) (Old dense matrix approach)
         latents = torch.sparse.mm(self.relation_matrix, self.relation_embeddings)
-        latents = torch.softmax(latents, dim=1)  # Normalize across relations
-        latents_flat = latents.t().reshape(-1)  # Shape: (nt * rp,)
+        # latents = torch.softmax(latents, dim=1)  # Normalize across relations
+        latents_flat = latents.t().reshape(-1)
+        assert latents_flat.size() == (nt * rp,)
 
         # Normalize latents for horizontal adjacency
-        latents_norm = latents_flat / sum_sparse(self.hindices, latents_flat,
-                                                 (n, n * rp), row=False)
+        latents_norm = latents_flat / sum_sparse(self.ver_indices, latents_flat,
+                                                 (n * rp, n), row=True)
+        latents_norm = torch.nan_to_num(latents_norm, nan=0.0)
 
         # First layer: Apply weights and aggregate
-        e = self.emb_dim
-        c = self.num_classes
-
         weights1_flat = self.weights1.view(rp * n, e)
-        h = spmm(self.hindices, latents_norm, (n, n * rp), weights1_flat)
+
+        # hor_graph check
+        hor_graph = torch.sparse_coo_tensor(self.hor_indices.t(), latents_norm, size=(n, n * rp)).coalesce()
+        hor_graph = hor_graph.to_dense()
+        h_check = torch.mm(hor_graph, weights1_flat)  # shape: (n, e)
+
+        # More efficient sparse matrix multiplication
+        h = spmm(indices=self.hor_indices, values=latents_norm, size=(n, n * rp), xmatrix=weights1_flat)
         assert h.size() == (n, e)
         h = F.relu(h + self.bias1)
 
-        h = self.dropout(h)
+        # h = self.dropout(h)
         # Normalize latents for vertical adjacency
-        latents_norm = latents_flat / sum_sparse(self.vindices, latents_flat,
+        latents_norm = latents_flat / sum_sparse(self.ver_indices, latents_flat,
                                                  (n * rp, n), row=True)
+        latents_norm = torch.nan_to_num(latents_norm, nan=0.0)
+
+        # ver_graph check
+        ver_graph = torch.sparse_coo_tensor(self.ver_indices.t(), latents_norm, size=(n * rp, n)).coalesce()
+        ver_graph = ver_graph.to_dense()
+        h_check = torch.mm(ver_graph, h)
 
         # Second layer: Aggregate and apply weights
-        h = spmm(self.vindices, latents_norm, (n * rp, n), h)
+        h = spmm(self.ver_indices, latents_norm, (n * rp, n), h)
         h = h.view(rp, n, e)
-        h = torch.einsum('rhc,rnh->nc', self.weights2, h)
+        h = torch.einsum('rne,rec->nc', h, self.weights2)
 
         return h + self.bias2  # Output logits
 
